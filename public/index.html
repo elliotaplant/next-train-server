@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NextTrain</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f2f2f7;
+            color: #1c1c1e;
+            line-height: 1.5;
+        }
+        
+        .header {
+            background-color: #fff;
+            padding: 15px 20px;
+            border-bottom: 1px solid #e5e5ea;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+        }
+        
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .btn {
+            background-color: #007aff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        .btn:hover {
+            background-color: #0051d5;
+        }
+        
+        .btn:disabled {
+            background-color: #c7c7cc;
+            cursor: not-allowed;
+        }
+        
+        .btn-secondary {
+            background-color: #e5e5ea;
+            color: #1c1c1e;
+        }
+        
+        .btn-secondary:hover {
+            background-color: #d1d1d6;
+        }
+        
+        .favorites-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        
+        .favorite-card {
+            background-color: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        
+        .favorite-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 15px;
+        }
+        
+        .favorite-info h3 {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        
+        .favorite-info p {
+            font-size: 14px;
+            color: #8e8e93;
+        }
+        
+        .remove-btn {
+            background-color: #ff3b30;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        
+        .remove-btn:hover {
+            background-color: #d70015;
+        }
+        
+        .predictions {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .prediction {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #f2f2f7;
+        }
+        
+        .prediction:last-child {
+            border-bottom: none;
+        }
+        
+        .prediction-time {
+            font-weight: 500;
+            font-family: -apple-system-monospaced, monospace;
+        }
+        
+        .prediction-arrival {
+            color: #8e8e93;
+            font-size: 14px;
+        }
+        
+        .loading {
+            text-align: center;
+            color: #8e8e93;
+            padding: 20px;
+        }
+        
+        .error {
+            background-color: #ffebee;
+            color: #c62828;
+            padding: 10px 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #8e8e93;
+        }
+        
+        .empty-state h2 {
+            font-size: 20px;
+            font-weight: 600;
+            color: #1c1c1e;
+            margin-bottom: 10px;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 200;
+        }
+        
+        .modal-content {
+            background-color: white;
+            margin: 50px auto;
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 500px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .modal-header h2 {
+            font-size: 20px;
+            font-weight: 600;
+        }
+        
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #8e8e93;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        
+        .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #d1d1d6;
+            border-radius: 8px;
+            font-size: 16px;
+            background-color: white;
+        }
+        
+        .inactive-warning {
+            background-color: #fff3cd;
+            color: #856404;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>NextTrain</h1>
+    </div>
+    
+    <div class="container">
+        <div class="controls">
+            <button class="btn" onclick="refreshPredictions()">
+                <span id="refreshText">Refresh</span>
+            </button>
+            <button class="btn btn-secondary" onclick="showAddModal()">
+                Add Favorite
+            </button>
+        </div>
+        
+        <div id="errorContainer"></div>
+        
+        <div id="favoritesContainer" class="favorites-list">
+            <div class="empty-state">
+                <h2>No Favorites Yet</h2>
+                <p>Add your favorite transit stops to see real-time departures</p>
+            </div>
+        </div>
+    </div>
+    
+    <div id="addModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Add Favorite Stop</h2>
+                <button class="close-btn" onclick="hideAddModal()">&times;</button>
+            </div>
+            
+            <form id="addFavoriteForm">
+                <div class="form-group">
+                    <label for="agency">Agency</label>
+                    <select id="agency" required onchange="onAgencyChange()">
+                        <option value="">Select agency...</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="route">Route</label>
+                    <select id="route" required disabled onchange="onRouteChange()">
+                        <option value="">Select agency first...</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="stop">Stop</label>
+                    <select id="stop" required disabled onchange="onStopChange()">
+                        <option value="">Select route first...</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="direction">Direction</label>
+                    <select id="direction" required disabled>
+                        <option value="">Select stop first...</option>
+                    </select>
+                </div>
+                
+                <button type="submit" class="btn" style="width: 100%;">
+                    Add Favorite
+                </button>
+            </form>
+        </div>
+    </div>
+    
+    <script>
+        // State management
+        let favorites = [];
+        let metadata = null;
+        let isRefreshing = false;
+        
+        // Load favorites from localStorage
+        function loadFavorites() {
+            const stored = localStorage.getItem('nextTrainFavorites');
+            if (stored) {
+                favorites = JSON.parse(stored);
+            }
+        }
+        
+        // Save favorites to localStorage
+        function saveFavorites() {
+            localStorage.setItem('nextTrainFavorites', JSON.stringify(favorites));
+        }
+        
+        // Initialize app
+        async function init() {
+            loadFavorites();
+            await loadMetadata();
+            
+            // Debug log
+            console.log('Metadata loaded:', metadata);
+            
+            renderFavorites();
+            if (favorites.length > 0) {
+                await refreshPredictions();
+            }
+        }
+        
+        // Load transit metadata
+        async function loadMetadata() {
+            try {
+                const response = await fetch('/api/transit/metadata');
+                const data = await response.json();
+                
+                if (data.success) {
+                    metadata = data;
+                    populateAgencySelect();
+                } else {
+                    throw new Error('Failed to load metadata');
+                }
+            } catch (error) {
+                console.error('Failed to load metadata:', error);
+                document.getElementById('errorContainer').innerHTML = `
+                    <div class="error">
+                        Failed to load transit data. Please refresh the page.
+                    </div>
+                `;
+            }
+        }
+        
+        // Populate agency dropdown
+        function populateAgencySelect() {
+            const select = document.getElementById('agency');
+            select.innerHTML = '<option value="">Select agency...</option>';
+            
+            metadata.agencies.forEach(agency => {
+                const option = document.createElement('option');
+                option.value = agency.code;
+                option.textContent = agency.name;
+                if (!agency.active) {
+                    option.textContent += ' (Inactive)';
+                }
+                select.appendChild(option);
+            });
+        }
+        
+        // Handle agency selection
+        function onAgencyChange() {
+            const agencyCode = document.getElementById('agency').value;
+            const routeSelect = document.getElementById('route');
+            const stopSelect = document.getElementById('stop');
+            const directionSelect = document.getElementById('direction');
+            
+            // Reset downstream selections
+            routeSelect.innerHTML = '<option value="">Select route...</option>';
+            stopSelect.innerHTML = '<option value="">Select route first...</option>';
+            directionSelect.innerHTML = '<option value="">Select stop first...</option>';
+            stopSelect.disabled = true;
+            directionSelect.disabled = true;
+            
+            if (!agencyCode) {
+                routeSelect.disabled = true;
+                return;
+            }
+            
+            // Enable and populate routes
+            routeSelect.disabled = false;
+            const routes = metadata.routes.filter(r => {
+                const agency = metadata.agencies.find(a => a.code === agencyCode);
+                return agency && r.agencyId === agency.id;
+            });
+            
+            routes.forEach(route => {
+                const option = document.createElement('option');
+                option.value = route.routeCode;
+                option.textContent = route.routeCode;
+                if (route.routeName) {
+                    option.textContent += ` - ${route.routeName}`;
+                }
+                if (!route.active) {
+                    option.textContent += ' (Inactive)';
+                }
+                routeSelect.appendChild(option);
+            });
+        }
+        
+        // Handle route selection
+        function onRouteChange() {
+            const agencyCode = document.getElementById('agency').value;
+            const routeCode = document.getElementById('route').value;
+            const stopSelect = document.getElementById('stop');
+            const directionSelect = document.getElementById('direction');
+            
+            // Reset downstream selections
+            stopSelect.innerHTML = '<option value="">Select stop...</option>';
+            directionSelect.innerHTML = '<option value="">Select stop first...</option>';
+            directionSelect.disabled = true;
+            
+            if (!routeCode) {
+                stopSelect.disabled = true;
+                return;
+            }
+            
+            // Enable and populate stops
+            stopSelect.disabled = false;
+            const agency = metadata.agencies.find(a => a.code === agencyCode);
+            const stops = metadata.stops.filter(s => 
+                s.agencyId === agency.id && s.routes.includes(routeCode)
+            );
+            
+            stops.forEach(stop => {
+                const option = document.createElement('option');
+                option.value = stop.stopCode;
+                option.textContent = stop.stopName;
+                if (!stop.active) {
+                    option.textContent += ' (Inactive)';
+                }
+                stopSelect.appendChild(option);
+            });
+        }
+        
+        // Handle stop selection
+        function onStopChange() {
+            const routeCode = document.getElementById('route').value;
+            const stopCode = document.getElementById('stop').value;
+            const directionSelect = document.getElementById('direction');
+            
+            // Reset direction selection
+            directionSelect.innerHTML = '<option value="">Select direction...</option>';
+            
+            if (!stopCode) {
+                directionSelect.disabled = true;
+                return;
+            }
+            
+            // Enable and populate directions
+            directionSelect.disabled = false;
+            const route = metadata.routes.find(r => r.routeCode === routeCode);
+            const directions = metadata.directions.filter(d => d.routeId === route.id);
+            
+            directions.forEach(direction => {
+                const option = document.createElement('option');
+                option.value = direction.directionCode || direction.headsign;
+                option.textContent = direction.directionCode || direction.headsign || 'Unknown direction';
+                if (!direction.active) {
+                    option.textContent += ' (Inactive)';
+                }
+                directionSelect.appendChild(option);
+            });
+        }
+        
+        // Show add favorite modal
+        function showAddModal() {
+            document.getElementById('addModal').style.display = 'block';
+        }
+        
+        // Hide add favorite modal
+        function hideAddModal() {
+            document.getElementById('addModal').style.display = 'none';
+            document.getElementById('addFavoriteForm').reset();
+            
+            // Reset selects
+            document.getElementById('route').disabled = true;
+            document.getElementById('stop').disabled = true;
+            document.getElementById('direction').disabled = true;
+        }
+        
+        // Handle form submission
+        document.getElementById('addFavoriteForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            
+            const favorite = {
+                id: Date.now().toString(),
+                agency: document.getElementById('agency').value,
+                route: document.getElementById('route').value,
+                stop: document.getElementById('stop').value,
+                direction: document.getElementById('direction').value,
+                predictions: []
+            };
+            
+            console.log('Form values:', favorite);
+            
+            // Get display names
+            const agency = metadata.agencies.find(a => a.code === favorite.agency);
+            const stop = metadata.stops.find(s => s.stopCode === favorite.stop && s.agencyId === (agency ? agency.id : null));
+            
+            if (!agency || !stop) {
+                console.error('Could not find agency or stop:', favorite);
+                alert('Error adding favorite. Please try again.');
+                return;
+            }
+            
+            favorite.agencyName = agency.name;
+            favorite.stopName = stop.stopName;
+            favorite.active = agency.active && stop.active;
+            
+            favorites.push(favorite);
+            saveFavorites();
+            hideAddModal();
+            renderFavorites();
+            refreshPredictions();
+        });
+        
+        // Remove favorite
+        function removeFavorite(id) {
+            favorites = favorites.filter(f => f.id !== id);
+            saveFavorites();
+            renderFavorites();
+        }
+        
+        // Render favorites list
+        function renderFavorites() {
+            const container = document.getElementById('favoritesContainer');
+            
+            if (favorites.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <h2>No Favorites Yet</h2>
+                        <p>Add your favorite transit stops to see real-time departures</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = favorites.map(favorite => `
+                <div class="favorite-card">
+                    ${!favorite.active ? '<div class="inactive-warning">This stop or route may no longer be in service</div>' : ''}
+                    <div class="favorite-header">
+                        <div class="favorite-info">
+                            <h3>${favorite.stopName}</h3>
+                            <p>${favorite.agencyName} • ${favorite.route} • ${favorite.direction}</p>
+                        </div>
+                        <button class="remove-btn" onclick="removeFavorite('${favorite.id}')">
+                            Remove
+                        </button>
+                    </div>
+                    <div class="predictions" id="predictions-${favorite.id}">
+                        <div class="loading">Loading predictions...</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        // Format time
+        function formatTime(isoTime) {
+            const date = new Date(isoTime);
+            const now = new Date();
+            const minutes = Math.round((date - now) / 60000);
+            
+            if (minutes < 1) return 'Now';
+            if (minutes === 1) return '1 min';
+            return `${minutes} mins`;
+        }
+        
+        // Format arrival time
+        function formatArrivalTime(isoTime) {
+            const date = new Date(isoTime);
+            return date.toLocaleTimeString('en-US', { 
+                hour: 'numeric', 
+                minute: '2-digit',
+                hour12: true 
+            });
+        }
+        
+        // Refresh predictions for all favorites
+        async function refreshPredictions() {
+            if (isRefreshing) return;
+            
+            isRefreshing = true;
+            const refreshBtn = document.querySelector('.btn');
+            refreshBtn.disabled = true;
+            document.getElementById('refreshText').textContent = 'Refreshing...';
+            
+            const errorContainer = document.getElementById('errorContainer');
+            errorContainer.innerHTML = '';
+            
+            try {
+                await Promise.all(favorites.map(async (favorite) => {
+                    const predictionsDiv = document.getElementById(`predictions-${favorite.id}`);
+                    
+                    try {
+                        const response = await fetch(
+                            `/api/transit/predictions?agency=${favorite.agency}&stop=${favorite.stop}&route=${favorite.route}`
+                        );
+                        const data = await response.json();
+                        
+                        if (data.success && data.predictions.length > 0) {
+                            // Filter by direction if specified
+                            let predictions = data.predictions;
+                            if (favorite.direction) {
+                                predictions = predictions.filter(p => 
+                                    p.direction.includes(favorite.direction)
+                                );
+                            }
+                            
+                            // Take top 3 predictions
+                            predictions = predictions.slice(0, 3);
+                            
+                            if (predictions.length === 0) {
+                                predictionsDiv.innerHTML = '<p style="color: #8e8e93;">No upcoming departures</p>';
+                            } else {
+                                predictionsDiv.innerHTML = predictions.map(pred => `
+                                    <div class="prediction">
+                                        <span class="prediction-time">${formatTime(pred.departureTime)}</span>
+                                        <span class="prediction-arrival">${formatArrivalTime(pred.departureTime)}</span>
+                                    </div>
+                                `).join('');
+                            }
+                        } else {
+                            predictionsDiv.innerHTML = '<p style="color: #8e8e93;">No predictions available</p>';
+                        }
+                    } catch (error) {
+                        predictionsDiv.innerHTML = '<p style="color: #ff3b30;">Failed to load</p>';
+                        console.error(`Failed to fetch predictions for ${favorite.id}:`, error);
+                    }
+                }));
+            } catch (error) {
+                errorContainer.innerHTML = `
+                    <div class="error">
+                        Failed to refresh predictions. Please try again.
+                    </div>
+                `;
+            } finally {
+                isRefreshing = false;
+                refreshBtn.disabled = false;
+                document.getElementById('refreshText').textContent = 'Refresh';
+            }
+        }
+        
+        // Auto-refresh every 30 seconds
+        setInterval(() => {
+            if (favorites.length > 0 && !isRefreshing) {
+                refreshPredictions();
+            }
+        }, 30000);
+        
+        // Initialize on load
+        init();
+    </script>
+</body>
+</html>
