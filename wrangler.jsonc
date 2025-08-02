@@ -10,6 +10,14 @@
 	"observability": {
 		"enabled": true
 	},
+	
+	/**
+	 * Cron Triggers
+	 * https://developers.cloudflare.com/workers/configuration/cron-triggers/
+	 */
+	"triggers": {
+		"crons": ["0 2 * * 0"]  // Every Sunday at 2:00 AM UTC
+	},
 	/**
 	 * Smart Placement
 	 * Docs: https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
@@ -45,6 +53,18 @@
 	 */
 	"send_email": [
 		{ "name": "SUPPORT_EMAIL", "destination_address": "elliotaplant@gmail.com" }
+	],
+
+	/**
+	 * D1 Database
+	 * https://developers.cloudflare.com/d1/
+	 */
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "next-train-db",
+			"database_id": "5cdaa711-a65d-4870-a122-e3bcf536c127"
+		}
 	],
 
 	/**

@@ -53,10 +53,6 @@ export class AcTransitClient {
 	}
 
 	async getPredictions(stopId: string, route: string): Promise<TransitPrediction[]> {
-		// Only support NL route for now
-		if (route !== "NL") {
-			throw new Error("Only NL route is currently supported");
-		}
 
 		const url = new URL(this.baseURL);
 		url.searchParams.append("stpid", stopId);
