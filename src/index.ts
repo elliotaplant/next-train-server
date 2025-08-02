@@ -5,6 +5,7 @@ import { TaskDelete } from "./endpoints/taskDelete";
 import { TaskFetch } from "./endpoints/taskFetch";
 import { TaskList } from "./endpoints/taskList";
 import { SupportEmail } from "./endpoints/supportEmail";
+import { TransitPredictions } from "./endpoints/transitPredictions";
 
 // Start a Hono app
 const app = new Hono<{ Bindings: Env }>();
@@ -22,6 +23,9 @@ openapi.delete("/api/tasks/:taskSlug", TaskDelete);
 
 // Support endpoint
 openapi.post("/api/support", SupportEmail);
+
+// Transit API endpoints
+openapi.get("/api/transit/predictions", TransitPredictions);
 
 // You may also register routes for non OpenAPI directly on Hono
 // app.get('/test', (c) => c.text('Hono!'))
