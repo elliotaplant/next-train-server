@@ -334,11 +334,6 @@
         // Initialize app
         async function init() {
             loadFavorites();
-            await loadMetadata();
-            
-            // Debug log
-            console.log('Metadata loaded:', metadata);
-            
             renderFavorites();
             if (favorites.length > 0) {
                 await refreshPredictions();
@@ -353,17 +348,14 @@
                 
                 if (data.success) {
                     metadata = data;
-                    populateAgencySelect();
+                    // Don't populate here - let the caller do it when ready
+                    return true;
                 } else {
                     throw new Error('Failed to load metadata');
                 }
             } catch (error) {
                 console.error('Failed to load metadata:', error);
-                document.getElementById('errorContainer').innerHTML = `
-                    <div class="error">
-                        Failed to load transit data. Please refresh the page.
-                    </div>
-                `;
+                return false;
             }
         }
         
@@ -489,8 +481,34 @@
         }
         
         // Show add favorite modal
-        function showAddModal() {
+        async function showAddModal() {
+            // Show modal first
             document.getElementById('addModal').style.display = 'block';
+            
+            // Load metadata on demand
+            if (!metadata) {
+                // Disable all selects and submit button while loading
+                const selects = document.querySelectorAll('#addFavoriteForm select');
+                const submitBtn = document.querySelector('#addFavoriteForm button[type="submit"]');
+                
+                selects.forEach(select => select.disabled = true);
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Loading...';
+                
+                const success = await loadMetadata();
+                
+                if (!success || !metadata) {
+                    alert('Failed to load transit data. Please try again.');
+                    hideAddModal();
+                    return;
+                }
+                
+                // Populate the agency select and enable it
+                populateAgencySelect();
+                document.getElementById('agency').disabled = false;
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Add Favorite';
+            }
         }
         
         // Hide add favorite modal
@@ -586,8 +604,6 @@
             const now = new Date();
             const minutes = Math.round((date - now) / 60000);
             
-            // Debug log
-            console.log(`Time calc: ${isoTime} -> ${date.toLocaleString()} (${minutes} mins from now)`);
             
             if (minutes < 1) return 'Now';
             if (minutes === 1) return '1 min';
