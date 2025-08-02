@@ -23,6 +23,11 @@ export class TransitMetadata extends OpenAPIRoute {
 					required: false,
 					default: false
 				}),
+				includeStops: Bool({
+					description: "Include stops in response",
+					required: false,
+					default: true
+				}),
 			}),
 		},
 		responses: {
@@ -83,7 +88,7 @@ export class TransitMetadata extends OpenAPIRoute {
 
 	async handle(c: AppContext) {
 		const data = await this.getValidatedData<typeof this.schema>();
-		const { agency, route, includeInactive } = data.query;
+		const { agency, route, includeInactive, includeStops } = data.query;
 
 		try {
 			const activeFilter = includeInactive ? "" : " AND active = TRUE";

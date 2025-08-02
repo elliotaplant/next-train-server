@@ -340,10 +340,10 @@
             }
         }
         
-        // Load transit metadata
+        // Load transit metadata (without stops for performance)
         async function loadMetadata() {
             try {
-                const response = await fetch('/api/transit/metadata');
+                const response = await fetch('/api/transit/metadata?includeStops=false');
                 const data = await response.json();
                 
                 if (data.success) {
@@ -356,6 +356,23 @@
             } catch (error) {
                 console.error('Failed to load metadata:', error);
                 return false;
+            }
+        }
+        
+        // Load stops for a specific route
+        async function loadRouteStops(agency, route) {
+            try {
+                const response = await fetch(`/api/transit/route-stops?agency=${agency}&route=${encodeURIComponent(route)}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    return data;
+                } else {
+                    throw new Error('Failed to load route stops');
+                }
+            } catch (error) {
+                console.error('Failed to load route stops:', error);
+                return null;
             }
         }
         
@@ -416,44 +433,71 @@
         }
         
         // Handle route selection
-        function onRouteChange() {
+        async function onRouteChange() {
             const agencyCode = document.getElementById('agency').value;
             const routeCode = document.getElementById('route').value;
             const stopSelect = document.getElementById('stop');
             const directionSelect = document.getElementById('direction');
             
             // Reset downstream selections
-            stopSelect.innerHTML = '<option value="">Select stop...</option>';
+            stopSelect.innerHTML = '<option value="">Loading stops...</option>';
             directionSelect.innerHTML = '<option value="">Select stop first...</option>';
             directionSelect.disabled = true;
             
             if (!routeCode) {
+                stopSelect.innerHTML = '<option value="">Select stop...</option>';
                 stopSelect.disabled = true;
                 return;
             }
             
-            // Enable and populate stops
-            stopSelect.disabled = false;
-            const agency = metadata.agencies.find(a => a.code === agencyCode);
-            const stops = metadata.stops.filter(s => 
-                s.agencyId === agency.id && s.routes.includes(routeCode)
-            );
+            // Disable stop select while loading
+            stopSelect.disabled = true;
             
-            stops.forEach(stop => {
-                const option = document.createElement('option');
-                option.value = stop.stopCode;
-                option.textContent = stop.stopName;
-                if (!stop.active) {
-                    option.textContent += ' (Inactive)';
-                }
-                stopSelect.appendChild(option);
-            });
+            // Load stops for this route
+            const routeData = await loadRouteStops(agencyCode, routeCode);
+            
+            if (routeData && routeData.directions) {
+                // Clear the loading message
+                stopSelect.innerHTML = '<option value="">Select stop...</option>';
+                
+                // Get unique stops across all directions
+                const uniqueStops = new Map();
+                routeData.directions.forEach(dir => {
+                    dir.stops.forEach(stop => {
+                        if (!uniqueStops.has(stop.stopCode)) {
+                            uniqueStops.set(stop.stopCode, stop);
+                        }
+                    });
+                });
+                
+                // Sort stops by name
+                const sortedStops = Array.from(uniqueStops.values()).sort((a, b) => 
+                    a.stopName.localeCompare(b.stopName)
+                );
+                
+                // Populate stops
+                sortedStops.forEach(stop => {
+                    const option = document.createElement('option');
+                    option.value = stop.stopCode;
+                    option.textContent = stop.stopName;
+                    stopSelect.appendChild(option);
+                });
+                
+                stopSelect.disabled = false;
+                
+                // Store route data for direction population later
+                stopSelect.dataset.routeData = JSON.stringify(routeData);
+            } else {
+                stopSelect.innerHTML = '<option value="">Failed to load stops</option>';
+                stopSelect.disabled = true;
+            }
         }
         
         // Handle stop selection
         function onStopChange() {
             const routeCode = document.getElementById('route').value;
             const stopCode = document.getElementById('stop').value;
+            const stopSelect = document.getElementById('stop');
             const directionSelect = document.getElementById('direction');
             
             // Reset direction selection
@@ -464,20 +508,34 @@
                 return;
             }
             
-            // Enable and populate directions
-            directionSelect.disabled = false;
-            const route = metadata.routes.find(r => r.routeCode === routeCode);
-            const directions = metadata.directions.filter(d => d.routeId === route.id);
+            // Get route data from dataset
+            const routeDataStr = stopSelect.dataset.routeData;
+            if (!routeDataStr) {
+                directionSelect.disabled = true;
+                return;
+            }
             
-            directions.forEach(direction => {
-                const option = document.createElement('option');
-                option.value = direction.directionCode || direction.headsign;
-                option.textContent = direction.directionCode || direction.headsign || 'Unknown direction';
-                if (!direction.active) {
-                    option.textContent += ' (Inactive)';
+            const routeData = JSON.parse(routeDataStr);
+            
+            // Find directions that serve this stop
+            const directionsForStop = [];
+            routeData.directions.forEach(dir => {
+                if (dir.stops.some(s => s.stopCode === stopCode)) {
+                    directionsForStop.push(dir);
                 }
-                directionSelect.appendChild(option);
             });
+            
+            if (directionsForStop.length > 0) {
+                directionSelect.disabled = false;
+                directionsForStop.forEach(direction => {
+                    const option = document.createElement('option');
+                    option.value = direction.direction;
+                    option.textContent = `${direction.direction} - ${direction.destination}`;
+                    directionSelect.appendChild(option);
+                });
+            } else {
+                directionSelect.disabled = true;
+            }
         }
         
         // Show add favorite modal

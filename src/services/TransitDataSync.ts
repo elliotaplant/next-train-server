@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ACTransitDataImporter } from "./ACTransitDataImporter";
 
 export interface SyncResult {
 	agency: string;
@@ -80,11 +81,6 @@ export class TransitDataSync {
 		
 		const agencyId = agency.id as number;
 
-		// For now, we'll just ensure NL route data is present
-		// In a real implementation, you would fetch all routes from AC Transit API
-		// Since AC Transit doesn't have a public routes/stops API, we'd need to
-		// either scrape their website or use GTFS data
-		
 		// Mark all existing data as potentially inactive
 		await this.db.prepare(
 			"UPDATE routes SET active = FALSE WHERE agency_id = ?"
@@ -94,36 +90,28 @@ export class TransitDataSync {
 			"UPDATE stops SET active = FALSE WHERE agency_id = ?"
 		).bind(agencyId).run();
 
-		// Reactivate NL route (simulating that it's still active)
-		const nlRoute = await this.db.prepare(
-			"UPDATE routes SET active = TRUE WHERE agency_id = ? AND route_code = 'NL' RETURNING id"
+		await this.db.prepare(
+			"UPDATE directions SET active = FALSE WHERE route_id IN (SELECT id FROM routes WHERE agency_id = ?)"
+		).bind(agencyId).run();
+
+		await this.db.prepare(
+			"UPDATE stop_routes SET active = FALSE WHERE route_id IN (SELECT id FROM routes WHERE agency_id = ?)"
+		).bind(agencyId).run();
+
+		// Import fresh data from AC Transit API
+		const importer = new ACTransitDataImporter(this.db, this.env.AC_TRANSIT_API_KEY);
+		const importResult = await importer.importAllData();
+
+		// Count what changed
+		const activeRoutes = await this.db.prepare(
+			"SELECT COUNT(*) as count FROM routes WHERE agency_id = ? AND active = TRUE"
 		).bind(agencyId).first();
+		result.routesUpdated = (activeRoutes?.count as number) || 0;
 
-		if (nlRoute) {
-			result.routesUpdated = 1;
-
-			// Reactivate NL stops
-			await this.db.prepare(
-				"UPDATE stops SET active = TRUE WHERE agency_id = ? AND stop_code IN ('55558', '50030')"
-			).bind(agencyId).run();
-			result.stopsUpdated = 2;
-
-			// Reactivate directions
-			await this.db.prepare(
-				"UPDATE directions SET active = TRUE WHERE route_id = ?"
-			).bind(nlRoute.id).run();
-
-			// Reactivate stop_routes
-			await this.db.prepare(`
-				UPDATE stop_routes SET active = TRUE 
-				WHERE route_id = ? 
-				AND stop_id IN (
-					SELECT id FROM stops 
-					WHERE agency_id = ? 
-					AND stop_code IN ('55558', '50030')
-				)
-			`).bind(nlRoute.id, agencyId).run();
-		}
+		const activeStops = await this.db.prepare(
+			"SELECT COUNT(*) as count FROM stops WHERE agency_id = ? AND active = TRUE"
+		).bind(agencyId).first();
+		result.stopsUpdated = (activeStops?.count as number) || 0;
 
 		// Count deactivated items
 		const deactivatedRoutes = await this.db.prepare(
@@ -135,6 +123,12 @@ export class TransitDataSync {
 			"SELECT COUNT(*) as count FROM stops WHERE agency_id = ? AND active = FALSE"
 		).bind(agencyId).first();
 		result.stopsDeactivated = (deactivatedStops?.count as number) || 0;
+
+		// Log any import errors
+		if (importResult.errors.length > 0) {
+			console.error("AC Transit import errors:", importResult.errors);
+			result.error = `Import completed with ${importResult.errors.length} errors`;
+		}
 
 		return result;
 	}

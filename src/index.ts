@@ -7,7 +7,9 @@ import { TaskList } from "./endpoints/taskList";
 import { SupportEmail } from "./endpoints/supportEmail";
 import { TransitPredictions } from "./endpoints/transitPredictions";
 import { TransitMetadata } from "./endpoints/transitMetadata";
+import { RouteStops } from "./endpoints/routeStops";
 import { SyncTransitData } from "./endpoints/syncTransitData";
+import { ImportACTransitData } from "./endpoints/importACTransitData";
 import { TransitDataSync } from "./services/TransitDataSync";
 
 // Start a Hono app
@@ -30,9 +32,11 @@ openapi.post("/api/support", SupportEmail);
 // Transit API endpoints
 openapi.get("/api/transit/predictions", TransitPredictions);
 openapi.get("/api/transit/metadata", TransitMetadata);
+openapi.get("/api/transit/route-stops", RouteStops);
 
 // Admin endpoints
 openapi.post("/api/admin/sync-transit-data", SyncTransitData);
+openapi.post("/api/admin/import-actransit-data", ImportACTransitData);
 
 // You may also register routes for non OpenAPI directly on Hono
 // app.get('/test', (c) => c.text('Hono!'))
