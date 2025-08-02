@@ -190,6 +190,7 @@ export class StopDirections extends OpenAPIRoute {
 			return (result.results || []).map(dir => ({
 				direction: dir.direction,
 				destination: dir.destination,
+				stopId: stopCode, // Include the stop ID for cached results
 			}));
 		} catch (error) {
 			console.error("Error fetching cached directions:", error);

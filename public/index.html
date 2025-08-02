@@ -322,6 +322,11 @@
             const stored = localStorage.getItem('nextTrainFavorites');
             if (stored) {
                 favorites = JSON.parse(stored);
+                // Ensure all favorites have active property defaulted to true
+                favorites = favorites.map(f => ({
+                    ...f,
+                    active: f.active !== undefined ? f.active : true
+                }));
             }
         }
         
@@ -612,7 +617,8 @@
                 route: document.getElementById('route').value,
                 stop: stopId, // Use the direction-specific stop ID
                 direction: document.getElementById('direction').value,
-                predictions: []
+                predictions: [],
+                active: true // Default to active until proven otherwise
             };
             
             // Get display names from the select elements
@@ -645,8 +651,19 @@
         }
         
         // Render favorites list
-        function renderFavorites() {
+        function renderFavorites(preservePredictions = false) {
             const container = document.getElementById('favoritesContainer');
+            
+            // Save current predictions if requested
+            const savedPredictions = {};
+            if (preservePredictions) {
+                favorites.forEach(favorite => {
+                    const predictionsDiv = document.getElementById(`predictions-${favorite.id}`);
+                    if (predictionsDiv) {
+                        savedPredictions[favorite.id] = predictionsDiv.innerHTML;
+                    }
+                });
+            }
             
             if (favorites.length === 0) {
                 container.innerHTML = `
@@ -660,7 +677,7 @@
             
             container.innerHTML = favorites.map(favorite => `
                 <div class="favorite-card">
-                    ${!favorite.active ? '<div class="inactive-warning">This stop or route may no longer be in service</div>' : ''}
+                    ${favorite.active === false ? '<div class="inactive-warning">This stop or route may no longer be in service</div>' : ''}
                     <div class="favorite-header">
                         <div class="favorite-info">
                             <h3>${favorite.stopName}</h3>
@@ -671,7 +688,7 @@
                         </button>
                     </div>
                     <div class="predictions" id="predictions-${favorite.id}">
-                        <div class="loading">Loading predictions...</div>
+                        ${savedPredictions[favorite.id] || '<div class="loading">Loading predictions...</div>'}
                     </div>
                 </div>
             `).join('');
@@ -773,8 +790,18 @@
                 isRefreshing = false;
                 refreshBtn.disabled = false;
                 document.getElementById('refreshText').textContent = 'Refresh';
-                // Re-render to update active status warnings
-                renderFavorites();
+                // Update active status warnings without re-rendering entire favorites
+                favorites.forEach(favorite => {
+                    const card = document.querySelector(`#predictions-${favorite.id}`).closest('.favorite-card');
+                    const warning = card.querySelector('.inactive-warning');
+                    if (favorite.active === false && !warning) {
+                        // Add warning if newly inactive
+                        card.insertAdjacentHTML('afterbegin', '<div class="inactive-warning">This stop or route may no longer be in service</div>');
+                    } else if (favorite.active !== false && warning) {
+                        // Remove warning if now active
+                        warning.remove();
+                    }
+                });
             }
         }
         
