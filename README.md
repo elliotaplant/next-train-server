@@ -1,25 +1,174 @@
-# Cloudflare Workers OpenAPI 3.1
+# NextTrain Server
 
-This is a Cloudflare Worker with OpenAPI 3.1 using [chanfana](https://github.com/cloudflare/chanfana) and [Hono](https://github.com/honojs/hono).
+A Cloudflare Worker that provides a backend API and web interface for the NextTrain transit app. It acts as an authenticated proxy and cache for transit APIs, currently supporting AC Transit.
 
-This is an example project made to be used as a quick start into building OpenAPI compliant Workers that generates the
-`openapi.json` schema automatically from code and validates the incoming request to the defined parameters or request body.
+## Features
 
-## Get started
+- **Transit API Proxy**: Authenticated proxy for AC Transit API with intelligent caching
+- **Web Interface**: Responsive web client for viewing real-time transit predictions
+- **Favorites System**: Save and manage favorite stops with localStorage
+- **Smart Caching**: 24-hour cache for metadata, 10-second cache for predictions, with stale-while-error fallback
+- **Support Page**: Contact form with Cloudflare Email Routing integration
+- **Database Storage**: D1 database for transit metadata (agencies, routes, stops, directions)
+- **Weekly Updates**: Cron trigger for updating transit metadata
 
-1. Sign up for [Cloudflare Workers](https://workers.dev). The free tier is more than enough for most use cases.
-2. Clone this project and install dependencies with `npm install`
-3. Run `wrangler login` to login to your Cloudflare account in wrangler
-4. Run `wrangler deploy` to publish the API to Cloudflare Workers
+## Architecture
 
-## Project structure
+```
+├── src/
+│   ├── index.ts              # Main worker entry point
+│   ├── endpoints/             # API endpoints
+│   │   ├── agencies.ts        # List transit agencies
+│   │   ├── routes.ts          # Routes for an agency
+│   │   ├── stops.ts           # Stops for a route
+│   │   ├── stopDirections.ts  # Directions for a stop
+│   │   ├── transitPredictions.ts # Real-time predictions
+│   │   └── support.ts         # Support form handler
+│   ├── clients/
+│   │   └── AcTransitClient.ts # AC Transit API client
+│   └── types.ts               # TypeScript types
+├── public/
+│   ├── index.html             # Web client
+│   └── support.html           # Support page
+└── schema.sql                 # D1 database schema
+```
 
-1. Your main router is defined in `src/index.ts`.
-2. Each endpoint has its own file in `src/endpoints/`.
-3. For more information read the [chanfana documentation](https://chanfana.pages.dev/) and [Hono documentation](https://hono.dev/docs).
+## Local Development
 
-## Development
+### Prerequisites
 
-1. Run `wrangler dev` to start a local instance of the API.
-2. Open `http://localhost:8787/` in your browser to see the Swagger interface where you can try the endpoints.
-3. Changes made in the `src/` folder will automatically trigger the server to reload, you only need to refresh the Swagger interface.
+- Node.js 18+
+- npm or yarn
+- Cloudflare account
+- Wrangler CLI (`npm install -g wrangler`)
+
+### Setup
+
+1. Clone the repository:
+```bash
+git clone https://github.com/elliotaplant/next-train-server.git
+cd next-train-server
+```
+
+2. Install dependencies:
+```bash
+npm install
+```
+
+3. Create D1 database:
+```bash
+wrangler d1 create next-train-db
+```
+
+4. Update `wrangler.toml` with your database ID:
+```toml
+[[d1_databases]]
+binding = "DB"
+database_name = "next-train-db"
+database_id = "YOUR_DATABASE_ID"
+```
+
+5. Initialize database schema:
+```bash
+wrangler d1 execute next-train-db --local --file=./schema.sql
+```
+
+6. Set up secrets:
+```bash
+# For local development
+echo "YOUR_AC_TRANSIT_API_KEY" | wrangler secret put AC_TRANSIT_API_KEY --local
+echo "your-email@example.com" | wrangler secret put SUPPORT_EMAIL --local
+
+# For production
+wrangler secret put AC_TRANSIT_API_KEY
+wrangler secret put SUPPORT_EMAIL
+```
+
+7. Start development server:
+```bash
+npm run dev
+```
+
+The server will be available at `http://localhost:8787`
+
+## API Endpoints
+
+### Transit Data
+
+- `GET /api/transit/agencies` - List all agencies
+- `GET /api/transit/routes?agency={code}` - Routes for an agency
+- `GET /api/transit/stops?agency={code}&route={code}` - Stops for a route
+- `GET /api/transit/stop-directions?agency={code}&route={code}&stop={code}` - Directions for a stop
+- `GET /api/transit/predictions?agency={code}&stop={id}&route={code}` - Real-time predictions
+
+### Support
+
+- `POST /api/support` - Submit support request
+
+### Admin
+
+- `POST /api/sync/actransit` - Manually sync AC Transit data (protected)
+
+## Deployment
+
+1. Build and deploy to Cloudflare:
+```bash
+npm run deploy
+```
+
+2. Initialize production database:
+```bash
+wrangler d1 execute next-train-db --file=./schema.sql
+```
+
+3. Verify cron trigger is set up (runs weekly at 2 AM Sunday):
+```bash
+wrangler tail
+```
+
+## Caching Strategy
+
+- **Routes & Stops**: Cached in D1 for 24 hours, serves stale data on API failure
+- **Predictions**: Cached using Cache API for 10 seconds
+- **Response Flags**: All cached responses include metadata:
+  ```json
+  {
+    "cache": {
+      "cached": true,
+      "fresh": false
+    }
+  }
+  ```
+
+## Environment Variables
+
+Required secrets:
+- `AC_TRANSIT_API_KEY`: API key for AC Transit
+- `SUPPORT_EMAIL`: Email address for support requests
+
+D1 Database binding:
+- `DB`: D1 database instance
+
+## Web Client Features
+
+- Progressive data loading (agency → route → stop → direction)
+- Real-time predictions with auto-refresh (30 seconds)
+- Favorites stored in localStorage
+- Responsive design for mobile and desktop
+- Visual indicators for inactive stops/routes
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test locally with `npm run dev`
+5. Submit a pull request
+
+## License
+
+MIT
+
+## Support
+
+For issues or questions, use the support form at `/support` or open an issue on GitHub.
