@@ -115,20 +115,50 @@ export class Stops extends OpenAPIRoute {
 
 			const routeStopsData = await response.json();
 
-			// Extract unique stops across all directions
-			const uniqueStops = new Map();
+			// Extract stops with direction info to handle duplicates
+			const stopsMap = new Map();
+			const stopDirections = new Map(); // Track which directions each stop serves
+			
 			for (const routeDirection of routeStopsData) {
 				for (const stop of routeDirection.Stops) {
-					if (!uniqueStops.has(stop.StopId)) {
-						uniqueStops.set(stop.StopId, {
-							stopId: stop.StopId.toString(),
-							stopCode: stop.StopId.toString(),
+					const stopId = stop.StopId.toString();
+					
+					// Track directions for this stop
+					if (!stopDirections.has(stopId)) {
+						stopDirections.set(stopId, []);
+					}
+					stopDirections.get(stopId).push(routeDirection.Direction);
+					
+					// Add stop if not already added
+					if (!stopsMap.has(stopId)) {
+						stopsMap.set(stopId, {
+							stopId: stopId,
+							stopCode: stopId,
 							stopName: stop.Name,
 							lat: stop.Latitude,
 							lon: stop.Longitude,
 						});
 					}
 				}
+			}
+			
+			// Check for duplicate stop names
+			const nameCount = new Map();
+			for (const stop of stopsMap.values()) {
+				const count = nameCount.get(stop.stopName) || 0;
+				nameCount.set(stop.stopName, count + 1);
+			}
+			
+			// Add direction info to duplicate stop names
+			const uniqueStops = new Map();
+			for (const [stopId, stop] of stopsMap.entries()) {
+				const isDuplicate = nameCount.get(stop.stopName) > 1;
+				if (isDuplicate && stopDirections.has(stopId)) {
+					const directions = stopDirections.get(stopId);
+					// Add first direction to stop name for clarity
+					stop.stopName = `${stop.stopName} (${directions[0]})`;
+				}
+				uniqueStops.set(stopId, stop);
 			}
 
 			const stops = Array.from(uniqueStops.values()).sort((a, b) => 
