@@ -586,6 +586,9 @@
             const now = new Date();
             const minutes = Math.round((date - now) / 60000);
             
+            // Debug log
+            console.log(`Time calc: ${isoTime} -> ${date.toLocaleString()} (${minutes} mins from now)`);
+            
             if (minutes < 1) return 'Now';
             if (minutes === 1) return '1 min';
             return `${minutes} mins`;
@@ -594,10 +597,12 @@
         // Format arrival time
         function formatArrivalTime(isoTime) {
             const date = new Date(isoTime);
+            // This will automatically convert UTC to local time
             return date.toLocaleTimeString('en-US', { 
                 hour: 'numeric', 
                 minute: '2-digit',
-                hour12: true 
+                hour12: true,
+                timeZone: 'America/Los_Angeles' // Force Pacific Time
             });
         }
         
