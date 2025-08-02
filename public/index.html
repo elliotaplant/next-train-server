@@ -530,8 +530,11 @@
             directionSelect.innerHTML = '<option value="">Select direction...</option>';
             directions.forEach(direction => {
                 const option = document.createElement('option');
-                option.value = direction.direction;
+                // Use destination as the value since that's what predictions return
+                option.value = direction.destination;
                 option.textContent = `${direction.direction} - ${direction.destination}`;
+                // Store the specific stop ID for this direction
+                option.dataset.stopId = direction.stopId;
                 directionSelect.appendChild(option);
             });
             directionSelect.disabled = false;
@@ -594,11 +597,20 @@
         document.getElementById('addFavoriteForm').addEventListener('submit', (e) => {
             e.preventDefault();
             
+            const directionSelect = document.getElementById('direction');
+            const selectedDirectionOption = directionSelect.options[directionSelect.selectedIndex];
+            
+            // Get the specific stop ID for the selected direction
+            let stopId = document.getElementById('stop').value;
+            if (selectedDirectionOption && selectedDirectionOption.dataset.stopId) {
+                stopId = selectedDirectionOption.dataset.stopId;
+            }
+            
             const favorite = {
                 id: Date.now().toString(),
                 agency: document.getElementById('agency').value,
                 route: document.getElementById('route').value,
-                stop: document.getElementById('stop').value,
+                stop: stopId, // Use the direction-specific stop ID
                 direction: document.getElementById('direction').value,
                 predictions: []
             };
@@ -711,7 +723,11 @@
                         );
                         const data = await response.json();
                         
+                        // Determine if the stop/route is active based on server response
                         if (data.success && data.predictions.length > 0) {
+                            // Mark as active - predictions available
+                            favorite.active = true;
+                            
                             // Filter by direction if specified
                             let predictions = data.predictions;
                             if (favorite.direction) {
@@ -724,6 +740,8 @@
                             predictions = predictions.slice(0, 3);
                             
                             if (predictions.length === 0) {
+                                // No predictions after filtering - mark as potentially inactive
+                                favorite.active = false;
                                 predictionsDiv.innerHTML = '<p style="color: #8e8e93;">No upcoming departures</p>';
                             } else {
                                 predictionsDiv.innerHTML = predictions.map(pred => `
@@ -734,9 +752,13 @@
                                 `).join('');
                             }
                         } else {
+                            // No predictions from server - mark as inactive
+                            favorite.active = false;
                             predictionsDiv.innerHTML = '<p style="color: #8e8e93;">No predictions available</p>';
                         }
                     } catch (error) {
+                        // Error fetching - mark as inactive
+                        favorite.active = false;
                         predictionsDiv.innerHTML = '<p style="color: #ff3b30;">Failed to load</p>';
                         console.error(`Failed to fetch predictions for ${favorite.id}:`, error);
                     }
@@ -751,6 +773,8 @@
                 isRefreshing = false;
                 refreshBtn.disabled = false;
                 document.getElementById('refreshText').textContent = 'Refresh';
+                // Re-render to update active status warnings
+                renderFavorites();
             }
         }
         

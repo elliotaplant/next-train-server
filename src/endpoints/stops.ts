@@ -115,55 +115,51 @@ export class Stops extends OpenAPIRoute {
 
 			const routeStopsData = await response.json();
 
-			// Extract stops with direction info to handle duplicates
-			const stopsMap = new Map();
-			const stopDirections = new Map(); // Track which directions each stop serves
+			// Extract unique stop NAMES (not IDs) across all directions
+			// Group stops by name to handle cases where one location has multiple IDs
+			const stopsByName = new Map();
 			
 			for (const routeDirection of routeStopsData) {
 				for (const stop of routeDirection.Stops) {
-					const stopId = stop.StopId.toString();
-					
-					// Track directions for this stop
-					if (!stopDirections.has(stopId)) {
-						stopDirections.set(stopId, []);
+					const stopName = stop.Name;
+					if (!stopsByName.has(stopName)) {
+						stopsByName.set(stopName, []);
 					}
-					stopDirections.get(stopId).push(routeDirection.Direction);
-					
-					// Add stop if not already added
-					if (!stopsMap.has(stopId)) {
-						stopsMap.set(stopId, {
-							stopId: stopId,
-							stopCode: stopId,
-							stopName: stop.Name,
-							lat: stop.Latitude,
-							lon: stop.Longitude,
-						});
-					}
+					stopsByName.get(stopName).push({
+						stopId: stop.StopId.toString(),
+						stopCode: stop.StopId.toString(),
+						stopName: stop.Name,
+						lat: stop.Latitude,
+						lon: stop.Longitude,
+						direction: routeDirection.Direction,
+					});
 				}
 			}
 			
-			// Check for duplicate stop names
-			const nameCount = new Map();
-			for (const stop of stopsMap.values()) {
-				const count = nameCount.get(stop.stopName) || 0;
-				nameCount.set(stop.stopName, count + 1);
-			}
-			
-			// Add direction info to duplicate stop names
-			const uniqueStops = new Map();
-			for (const [stopId, stop] of stopsMap.entries()) {
-				const isDuplicate = nameCount.get(stop.stopName) > 1;
-				if (isDuplicate && stopDirections.has(stopId)) {
-					const directions = stopDirections.get(stopId);
-					// Add first direction to stop name for clarity
-					stop.stopName = `${stop.stopName} (${directions[0]})`;
+			// Create one entry per unique stop name
+			// For stops with multiple IDs, we'll use a comma-separated list of IDs
+			const stops = Array.from(stopsByName.entries()).map(([name, stopList]) => {
+				if (stopList.length === 1) {
+					// Single stop ID for this name
+					return {
+						stopId: stopList[0].stopId,
+						stopCode: stopList[0].stopCode,
+						stopName: stopList[0].stopName,
+						lat: stopList[0].lat,
+						lon: stopList[0].lon,
+					};
+				} else {
+					// Multiple stop IDs for this name - combine them
+					// Use the first stop's coordinates (they should be very close)
+					return {
+						stopId: stopList.map(s => s.stopId).join(','),
+						stopCode: stopList.map(s => s.stopCode).join(','),
+						stopName: name,
+						lat: stopList[0].lat,
+						lon: stopList[0].lon,
+					};
 				}
-				uniqueStops.set(stopId, stop);
-			}
-
-			const stops = Array.from(uniqueStops.values()).sort((a, b) => 
-				a.stopName.localeCompare(b.stopName)
-			);
+			}).sort((a, b) => a.stopName.localeCompare(b.stopName));
 
 			// Cache the data asynchronously
 			c.executionCtx.waitUntil(this.cacheStopsData(c.env.DB, agency, route, routeStopsData));
@@ -202,13 +198,41 @@ export class Stops extends OpenAPIRoute {
 				ORDER BY s.stop_name
 			`).bind(agencyCode, routeCode).all();
 
-			return (result.results || []).map(stop => ({
-				stopId: stop.stopCode,
-				stopCode: stop.stopCode,
-				stopName: stop.stopName,
-				lat: stop.lat,
-				lon: stop.lon,
-			}));
+			if (!result.results || result.results.length === 0) {
+				return [];
+			}
+
+			// Group stops by name to handle duplicates
+			const stopsByName = new Map();
+			for (const stop of result.results) {
+				const stopName = stop.stopName;
+				if (!stopsByName.has(stopName)) {
+					stopsByName.set(stopName, []);
+				}
+				stopsByName.get(stopName).push({
+					stopId: stop.stopCode,
+					stopCode: stop.stopCode,
+					stopName: stop.stopName,
+					lat: stop.lat,
+					lon: stop.lon,
+				});
+			}
+
+			// Create one entry per unique stop name
+			return Array.from(stopsByName.entries()).map(([name, stopList]) => {
+				if (stopList.length === 1) {
+					return stopList[0];
+				} else {
+					// Multiple stop IDs for this name - combine them
+					return {
+						stopId: stopList.map(s => s.stopId).join(','),
+						stopCode: stopList.map(s => s.stopCode).join(','),
+						stopName: name,
+						lat: stopList[0].lat,
+						lon: stopList[0].lon,
+					};
+				}
+			}).sort((a, b) => a.stopName.localeCompare(b.stopName));
 		} catch (error) {
 			console.error("Error fetching cached stops:", error);
 			return [];

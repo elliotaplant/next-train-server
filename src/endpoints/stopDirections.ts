@@ -26,6 +26,7 @@ export class StopDirections extends OpenAPIRoute {
 							directions: z.array(z.object({
 								direction: Str(),
 								destination: Str(),
+								stopId: Str(),
 							})),
 						}),
 					},
@@ -115,17 +116,27 @@ export class StopDirections extends OpenAPIRoute {
 
 			const routeStopsData = await response.json();
 
-			// Find directions that serve this stop
-			const directionsForStop = [];
+			// Handle comma-separated stop IDs (for stops with same name but different IDs)
+			const stopIds = stop.split(',').map(id => id.trim());
+			
+			// Find directions that serve any of these stop IDs
+			// Also track which stop ID serves which direction
+			const directionsMap = new Map();
+			
 			for (const routeDirection of routeStopsData) {
-				const hasStop = routeDirection.Stops.some((s: any) => s.StopId.toString() === stop);
-				if (hasStop) {
-					directionsForStop.push({
-						direction: routeDirection.Direction,
-						destination: routeDirection.Destination,
-					});
+				for (const stopId of stopIds) {
+					const hasStop = routeDirection.Stops.some((s: any) => s.StopId.toString() === stopId);
+					if (hasStop && !directionsMap.has(routeDirection.Direction)) {
+						directionsMap.set(routeDirection.Direction, {
+							direction: routeDirection.Direction,
+							destination: routeDirection.Destination,
+							stopId: stopId, // Include which stop ID to use for this direction
+						});
+					}
 				}
 			}
+			
+			const directionsForStop = Array.from(directionsMap.values());
 
 			if (directionsForStop.length === 0) {
 				return Response.json(
