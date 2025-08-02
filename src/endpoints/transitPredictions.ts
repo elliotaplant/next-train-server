@@ -85,6 +85,32 @@ export class TransitPredictions extends OpenAPIRoute {
 		const data = await this.getValidatedData<typeof this.schema>();
 		const { agency, stop, route, direction, headsign } = data.query;
 
+		// Create cache key for predictions
+		const cacheKey = `predictions:${agency}:${stop}:${route}`;
+		const cache = caches.default;
+
+		// Try to get from cache (10 second TTL for predictions)
+		const cacheUrl = new URL(c.req.url);
+		cacheUrl.searchParams.set('cache-key', cacheKey);
+		const cachedResponse = await cache.match(cacheUrl.toString());
+		
+		if (cachedResponse) {
+			const age = cachedResponse.headers.get('age');
+			if (age && parseInt(age) < 10) {
+				// Cache hit and fresh (less than 10 seconds old)
+				const cachedData = await cachedResponse.json();
+				
+				// Apply direction filter if needed
+				if (direction && cachedData.predictions) {
+					cachedData.predictions = cachedData.predictions.filter((p: TransitPrediction) => 
+						p.direction.toLowerCase().includes(direction.toLowerCase())
+					);
+				}
+				
+				return cachedData;
+			}
+		}
+
 		try {
 			let predictions: TransitPrediction[] = [];
 
@@ -93,13 +119,6 @@ export class TransitPredictions extends OpenAPIRoute {
 				case "actransit":
 					const acTransitClient = new AcTransitClient(c.env.AC_TRANSIT_API_KEY);
 					predictions = await acTransitClient.getPredictions(stop, route);
-					
-					// Filter by direction if provided
-					if (direction) {
-						predictions = predictions.filter(p => 
-							p.direction.toLowerCase().includes(direction.toLowerCase())
-						);
-					}
 					break;
 					
 				default:
@@ -110,6 +129,33 @@ export class TransitPredictions extends OpenAPIRoute {
 						},
 						{ status: 400 }
 					);
+			}
+
+			// Create response data
+			const responseData = {
+				success: true,
+				agency,
+				stop,
+				route,
+				predictions,
+			};
+
+			// Cache the unfiltered response
+			const cacheResponse = new Response(JSON.stringify(responseData), {
+				headers: {
+					'Content-Type': 'application/json',
+					'Cache-Control': 'max-age=10', // 10 second cache
+				},
+			});
+			
+			// Store in cache
+			c.executionCtx.waitUntil(cache.put(cacheUrl.toString(), cacheResponse.clone()));
+
+			// Apply direction filter if provided  
+			if (direction) {
+				predictions = predictions.filter(p => 
+					p.direction.toLowerCase().includes(direction.toLowerCase())
+				);
 			}
 
 			return {

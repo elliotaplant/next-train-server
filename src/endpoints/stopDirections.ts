@@ -28,6 +28,10 @@ export class StopDirections extends OpenAPIRoute {
 								destination: Str(),
 								stopId: Str(),
 							})),
+							cache: z.object({
+								cached: Bool(),
+								fresh: Bool(),
+							}).optional(),
 						}),
 					},
 				},

@@ -28,6 +28,10 @@ export class Stops extends OpenAPIRoute {
 								lat: z.number().nullable(),
 								lon: z.number().nullable(),
 							})),
+							cache: z.object({
+								cached: Bool(),
+								fresh: Bool(),
+							}).optional(),
 						}),
 					},
 				},
@@ -73,20 +77,39 @@ export class Stops extends OpenAPIRoute {
 		const { agency, route } = data.query;
 
 		try {
-			// First check if we have cached stops
+			// Check if we have cached stops
 			const cachedStops = await this.getCachedStops(c.env.DB, agency, route);
 			
-			if (cachedStops.length > 0) {
+			// If cache is fresh (< 24 hours), return immediately
+			if (cachedStops.fresh && cachedStops.stops.length > 0) {
 				return {
 					success: true,
 					agency,
 					route,
-					stops: cachedStops,
+					stops: cachedStops.stops,
+					cache: {
+						cached: true,
+						fresh: true,
+					},
 				};
 			}
 
-			// If not cached, fetch from AC Transit API
+			// Cache is stale or empty, try to fetch fresh data
 			if (agency !== "actransit") {
+				// For non-AC Transit, return stale data if available
+				if (cachedStops.stops.length > 0) {
+					return {
+						success: true,
+						agency,
+						route,
+						stops: cachedStops.stops,
+						cache: {
+							cached: true,
+							fresh: false,
+						},
+					};
+				}
+				
 				return Response.json(
 					{
 						success: false,
@@ -96,22 +119,24 @@ export class Stops extends OpenAPIRoute {
 				);
 			}
 
-			// Fetch stops from AC Transit API
-			const url = `https://api.actransit.org/transit/route/${encodeURIComponent(route)}/stops?token=${c.env.AC_TRANSIT_API_KEY}`;
-			const response = await fetch(url);
+			// Try to fetch fresh stops from AC Transit API
+			try {
+				const url = `https://api.actransit.org/transit/route/${encodeURIComponent(route)}/stops?token=${c.env.AC_TRANSIT_API_KEY}`;
+				const response = await fetch(url);
 
-			if (!response.ok) {
-				if (response.status === 404) {
-					return Response.json(
-						{
-							success: false,
-							error: `Route ${route} not found`,
-						},
-						{ status: 404 }
-					);
+				if (!response.ok) {
+					if (response.status === 404) {
+						// Route doesn't exist, don't return stale data
+						return Response.json(
+							{
+								success: false,
+								error: `Route ${route} not found`,
+							},
+							{ status: 404 }
+						);
+					}
+					throw new Error(`AC Transit API error: ${response.status}`);
 				}
-				throw new Error(`AC Transit API error: ${response.status}`);
-			}
 
 			const routeStopsData = await response.json();
 
@@ -161,15 +186,39 @@ export class Stops extends OpenAPIRoute {
 				}
 			}).sort((a, b) => a.stopName.localeCompare(b.stopName));
 
-			// Cache the data asynchronously
-			c.executionCtx.waitUntil(this.cacheStopsData(c.env.DB, agency, route, routeStopsData));
+				// Cache the data asynchronously
+				c.executionCtx.waitUntil(this.cacheStopsData(c.env.DB, agency, route, routeStopsData));
 
-			return {
-				success: true,
-				agency,
-				route,
-				stops,
-			};
+				return {
+					success: true,
+					agency,
+					route,
+					stops,
+					cache: {
+						cached: false,
+						fresh: true,
+					},
+				};
+			} catch (fetchError) {
+				// API call failed, serve stale data if available
+				console.error("Failed to fetch fresh stops:", fetchError);
+				
+				if (cachedStops.stops.length > 0) {
+					return {
+						success: true,
+						agency,
+						route,
+						stops: cachedStops.stops,
+						cache: {
+							cached: true,
+							fresh: false,
+						},
+					};
+				}
+				
+				// No cached data available, throw the error
+				throw fetchError;
+			}
 		} catch (error) {
 			console.error("Stops error:", error);
 			return Response.json(
@@ -184,6 +233,22 @@ export class Stops extends OpenAPIRoute {
 
 	private async getCachedStops(db: D1Database, agencyCode: string, routeCode: string) {
 		try {
+			// First check when the route was last updated
+			const routeInfo = await db.prepare(`
+				SELECT r.updated_at
+				FROM routes r
+				JOIN agencies a ON r.agency_id = a.id
+				WHERE a.code = ? AND r.route_code = ?
+			`).bind(agencyCode, routeCode).first();
+
+			let fresh = false;
+			if (routeInfo && routeInfo.updated_at) {
+				const lastUpdate = new Date(routeInfo.updated_at);
+				const now = new Date();
+				const hoursSinceUpdate = (now.getTime() - lastUpdate.getTime()) / (1000 * 60 * 60);
+				fresh = hoursSinceUpdate < 24;
+			}
+
 			const result = await db.prepare(`
 				SELECT DISTINCT 
 					s.stop_code as stopCode,
@@ -199,7 +264,7 @@ export class Stops extends OpenAPIRoute {
 			`).bind(agencyCode, routeCode).all();
 
 			if (!result.results || result.results.length === 0) {
-				return [];
+				return { fresh, stops: [] };
 			}
 
 			// Group stops by name to handle duplicates
@@ -219,7 +284,7 @@ export class Stops extends OpenAPIRoute {
 			}
 
 			// Create one entry per unique stop name
-			return Array.from(stopsByName.entries()).map(([name, stopList]) => {
+			const stops = Array.from(stopsByName.entries()).map(([name, stopList]) => {
 				if (stopList.length === 1) {
 					return stopList[0];
 				} else {
@@ -233,9 +298,11 @@ export class Stops extends OpenAPIRoute {
 					};
 				}
 			}).sort((a, b) => a.stopName.localeCompare(b.stopName));
+
+			return { fresh, stops };
 		} catch (error) {
 			console.error("Error fetching cached stops:", error);
-			return [];
+			return { fresh: false, stops: [] };
 		}
 	}
 
@@ -308,6 +375,11 @@ export class Stops extends OpenAPIRoute {
 					}
 				}
 			}
+
+			// Update route timestamp to mark cache as fresh
+			await db.prepare(
+				"UPDATE routes SET updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+			).bind(route.id).run();
 		} catch (error) {
 			console.error("Error caching stops:", error);
 		}
