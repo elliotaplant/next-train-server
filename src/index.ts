@@ -8,6 +8,10 @@ import { SupportEmail } from "./endpoints/supportEmail";
 import { TransitPredictions } from "./endpoints/transitPredictions";
 import { TransitMetadata } from "./endpoints/transitMetadata";
 import { RouteStops } from "./endpoints/routeStops";
+import { Agencies } from "./endpoints/agencies";
+import { Routes } from "./endpoints/routes";
+import { Stops } from "./endpoints/stops";
+import { StopDirections } from "./endpoints/stopDirections";
 import { SyncTransitData } from "./endpoints/syncTransitData";
 import { ImportACTransitData } from "./endpoints/importACTransitData";
 import { TransitDataSync } from "./services/TransitDataSync";
@@ -33,6 +37,12 @@ openapi.post("/api/support", SupportEmail);
 openapi.get("/api/transit/predictions", TransitPredictions);
 openapi.get("/api/transit/metadata", TransitMetadata);
 openapi.get("/api/transit/route-stops", RouteStops);
+
+// New cascading endpoints
+openapi.get("/api/transit/agencies", Agencies);
+openapi.get("/api/transit/routes", Routes);
+openapi.get("/api/transit/stops", Stops);
+openapi.get("/api/transit/stop-directions", StopDirections);
 
 // Admin endpoints
 openapi.post("/api/admin/sync-transit-data", SyncTransitData);

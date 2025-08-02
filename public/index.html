@@ -315,7 +315,6 @@
     <script>
         // State management
         let favorites = [];
-        let metadata = null;
         let isRefreshing = false;
         
         // Load favorites from localStorage
@@ -340,38 +339,70 @@
             }
         }
         
-        // Load transit metadata (without stops for performance)
-        async function loadMetadata() {
+        // Load agencies
+        async function loadAgencies() {
             try {
-                const response = await fetch('/api/transit/metadata?includeStops=false');
+                const response = await fetch('/api/transit/agencies');
                 const data = await response.json();
                 
                 if (data.success) {
-                    metadata = data;
-                    // Don't populate here - let the caller do it when ready
-                    return true;
+                    return data.agencies;
                 } else {
-                    throw new Error('Failed to load metadata');
+                    throw new Error('Failed to load agencies');
                 }
             } catch (error) {
-                console.error('Failed to load metadata:', error);
-                return false;
+                console.error('Failed to load agencies:', error);
+                return null;
             }
         }
         
-        // Load stops for a specific route
-        async function loadRouteStops(agency, route) {
+        // Load routes for an agency
+        async function loadRoutes(agency) {
             try {
-                const response = await fetch(`/api/transit/route-stops?agency=${agency}&route=${encodeURIComponent(route)}`);
+                const response = await fetch(`/api/transit/routes?agency=${agency}`);
                 const data = await response.json();
                 
                 if (data.success) {
-                    return data;
+                    return data.routes;
                 } else {
-                    throw new Error('Failed to load route stops');
+                    throw new Error('Failed to load routes');
                 }
             } catch (error) {
-                console.error('Failed to load route stops:', error);
+                console.error('Failed to load routes:', error);
+                return null;
+            }
+        }
+        
+        // Load stops for a route
+        async function loadStops(agency, route) {
+            try {
+                const response = await fetch(`/api/transit/stops?agency=${agency}&route=${encodeURIComponent(route)}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    return data.stops;
+                } else {
+                    throw new Error('Failed to load stops');
+                }
+            } catch (error) {
+                console.error('Failed to load stops:', error);
+                return null;
+            }
+        }
+        
+        // Load directions for a stop
+        async function loadDirections(agency, route, stop) {
+            try {
+                const response = await fetch(`/api/transit/stop-directions?agency=${agency}&route=${encodeURIComponent(route)}&stop=${stop}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    return data.directions;
+                } else {
+                    throw new Error('Failed to load directions');
+                }
+            } catch (error) {
+                console.error('Failed to load directions:', error);
                 return null;
             }
         }
@@ -393,43 +424,45 @@
         }
         
         // Handle agency selection
-        function onAgencyChange() {
+        async function onAgencyChange() {
             const agencyCode = document.getElementById('agency').value;
             const routeSelect = document.getElementById('route');
             const stopSelect = document.getElementById('stop');
             const directionSelect = document.getElementById('direction');
             
             // Reset downstream selections
-            routeSelect.innerHTML = '<option value="">Select route...</option>';
+            routeSelect.innerHTML = '<option value="">Loading routes...</option>';
             stopSelect.innerHTML = '<option value="">Select route first...</option>';
             directionSelect.innerHTML = '<option value="">Select stop first...</option>';
+            routeSelect.disabled = true;
             stopSelect.disabled = true;
             directionSelect.disabled = true;
             
             if (!agencyCode) {
-                routeSelect.disabled = true;
+                routeSelect.innerHTML = '<option value="">Select route...</option>';
                 return;
             }
             
-            // Enable and populate routes
-            routeSelect.disabled = false;
-            const routes = metadata.routes.filter(r => {
-                const agency = metadata.agencies.find(a => a.code === agencyCode);
-                return agency && r.agencyId === agency.id;
-            });
+            // Load routes for this agency
+            const routes = await loadRoutes(agencyCode);
             
+            if (!routes) {
+                routeSelect.innerHTML = '<option value="">Failed to load routes</option>';
+                return;
+            }
+            
+            // Populate routes
+            routeSelect.innerHTML = '<option value="">Select route...</option>';
             routes.forEach(route => {
                 const option = document.createElement('option');
                 option.value = route.routeCode;
                 option.textContent = route.routeCode;
-                if (route.routeName) {
+                if (route.routeName && route.routeName !== route.routeCode) {
                     option.textContent += ` - ${route.routeName}`;
-                }
-                if (!route.active) {
-                    option.textContent += ' (Inactive)';
                 }
                 routeSelect.appendChild(option);
             });
+            routeSelect.disabled = false;
         }
         
         // Handle route selection
@@ -442,100 +475,66 @@
             // Reset downstream selections
             stopSelect.innerHTML = '<option value="">Loading stops...</option>';
             directionSelect.innerHTML = '<option value="">Select stop first...</option>';
+            stopSelect.disabled = true;
             directionSelect.disabled = true;
             
             if (!routeCode) {
                 stopSelect.innerHTML = '<option value="">Select stop...</option>';
-                stopSelect.disabled = true;
                 return;
             }
             
-            // Disable stop select while loading
-            stopSelect.disabled = true;
-            
             // Load stops for this route
-            const routeData = await loadRouteStops(agencyCode, routeCode);
+            const stops = await loadStops(agencyCode, routeCode);
             
-            if (routeData && routeData.directions) {
-                // Clear the loading message
-                stopSelect.innerHTML = '<option value="">Select stop...</option>';
-                
-                // Get unique stops across all directions
-                const uniqueStops = new Map();
-                routeData.directions.forEach(dir => {
-                    dir.stops.forEach(stop => {
-                        if (!uniqueStops.has(stop.stopCode)) {
-                            uniqueStops.set(stop.stopCode, stop);
-                        }
-                    });
-                });
-                
-                // Sort stops by name
-                const sortedStops = Array.from(uniqueStops.values()).sort((a, b) => 
-                    a.stopName.localeCompare(b.stopName)
-                );
-                
-                // Populate stops
-                sortedStops.forEach(stop => {
-                    const option = document.createElement('option');
-                    option.value = stop.stopCode;
-                    option.textContent = stop.stopName;
-                    stopSelect.appendChild(option);
-                });
-                
-                stopSelect.disabled = false;
-                
-                // Store route data for direction population later
-                stopSelect.dataset.routeData = JSON.stringify(routeData);
-            } else {
+            if (!stops) {
                 stopSelect.innerHTML = '<option value="">Failed to load stops</option>';
-                stopSelect.disabled = true;
+                return;
             }
+            
+            // Populate stops
+            stopSelect.innerHTML = '<option value="">Select stop...</option>';
+            stops.forEach(stop => {
+                const option = document.createElement('option');
+                option.value = stop.stopCode;
+                option.textContent = stop.stopName;
+                stopSelect.appendChild(option);
+            });
+            stopSelect.disabled = false;
         }
         
         // Handle stop selection
-        function onStopChange() {
+        async function onStopChange() {
+            const agencyCode = document.getElementById('agency').value;
             const routeCode = document.getElementById('route').value;
             const stopCode = document.getElementById('stop').value;
-            const stopSelect = document.getElementById('stop');
             const directionSelect = document.getElementById('direction');
             
             // Reset direction selection
-            directionSelect.innerHTML = '<option value="">Select direction...</option>';
+            directionSelect.innerHTML = '<option value="">Loading directions...</option>';
+            directionSelect.disabled = true;
             
             if (!stopCode) {
-                directionSelect.disabled = true;
+                directionSelect.innerHTML = '<option value="">Select direction...</option>';
                 return;
             }
             
-            // Get route data from dataset
-            const routeDataStr = stopSelect.dataset.routeData;
-            if (!routeDataStr) {
-                directionSelect.disabled = true;
+            // Load directions for this stop
+            const directions = await loadDirections(agencyCode, routeCode, stopCode);
+            
+            if (!directions) {
+                directionSelect.innerHTML = '<option value="">Failed to load directions</option>';
                 return;
             }
             
-            const routeData = JSON.parse(routeDataStr);
-            
-            // Find directions that serve this stop
-            const directionsForStop = [];
-            routeData.directions.forEach(dir => {
-                if (dir.stops.some(s => s.stopCode === stopCode)) {
-                    directionsForStop.push(dir);
-                }
+            // Populate directions
+            directionSelect.innerHTML = '<option value="">Select direction...</option>';
+            directions.forEach(direction => {
+                const option = document.createElement('option');
+                option.value = direction.direction;
+                option.textContent = `${direction.direction} - ${direction.destination}`;
+                directionSelect.appendChild(option);
             });
-            
-            if (directionsForStop.length > 0) {
-                directionSelect.disabled = false;
-                directionsForStop.forEach(direction => {
-                    const option = document.createElement('option');
-                    option.value = direction.direction;
-                    option.textContent = `${direction.direction} - ${direction.destination}`;
-                    directionSelect.appendChild(option);
-                });
-            } else {
-                directionSelect.disabled = true;
-            }
+            directionSelect.disabled = false;
         }
         
         // Show add favorite modal
@@ -543,30 +542,41 @@
             // Show modal first
             document.getElementById('addModal').style.display = 'block';
             
-            // Load metadata on demand
-            if (!metadata) {
-                // Disable all selects and submit button while loading
-                const selects = document.querySelectorAll('#addFavoriteForm select');
-                const submitBtn = document.querySelector('#addFavoriteForm button[type="submit"]');
-                
-                selects.forEach(select => select.disabled = true);
-                submitBtn.disabled = true;
-                submitBtn.textContent = 'Loading...';
-                
-                const success = await loadMetadata();
-                
-                if (!success || !metadata) {
-                    alert('Failed to load transit data. Please try again.');
-                    hideAddModal();
-                    return;
+            // Reset form
+            document.getElementById('addFavoriteForm').reset();
+            const selects = document.querySelectorAll('#addFavoriteForm select');
+            const submitBtn = document.querySelector('#addFavoriteForm button[type="submit"]');
+            
+            // Disable all except agency
+            selects.forEach((select, index) => {
+                select.disabled = index > 0; // Only agency (index 0) is enabled
+                if (index > 0) {
+                    select.innerHTML = `<option value="">Select ${select.id} first...</option>`;
                 }
-                
-                // Populate the agency select and enable it
-                populateAgencySelect();
-                document.getElementById('agency').disabled = false;
-                submitBtn.disabled = false;
-                submitBtn.textContent = 'Add Favorite';
+            });
+            
+            // Load agencies
+            const agencySelect = document.getElementById('agency');
+            agencySelect.innerHTML = '<option value="">Loading agencies...</option>';
+            agencySelect.disabled = true;
+            
+            const agencies = await loadAgencies();
+            
+            if (!agencies) {
+                alert('Failed to load transit agencies. Please try again.');
+                hideAddModal();
+                return;
             }
+            
+            // Populate agencies
+            agencySelect.innerHTML = '<option value="">Select agency...</option>';
+            agencies.forEach(agency => {
+                const option = document.createElement('option');
+                option.value = agency.code;
+                option.textContent = agency.name;
+                agencySelect.appendChild(option);
+            });
+            agencySelect.disabled = false;
         }
         
         // Hide add favorite modal
@@ -593,21 +603,20 @@
                 predictions: []
             };
             
-            console.log('Form values:', favorite);
+            // Get display names from the select elements
+            const agencySelect = document.getElementById('agency');
+            const stopSelect = document.getElementById('stop');
             
-            // Get display names
-            const agency = metadata.agencies.find(a => a.code === favorite.agency);
-            const stop = metadata.stops.find(s => s.stopCode === favorite.stop && s.agencyId === (agency ? agency.id : null));
+            const selectedAgencyOption = agencySelect.options[agencySelect.selectedIndex];
+            const selectedStopOption = stopSelect.options[stopSelect.selectedIndex];
             
-            if (!agency || !stop) {
-                console.error('Could not find agency or stop:', favorite);
-                alert('Error adding favorite. Please try again.');
+            if (!selectedAgencyOption || !selectedStopOption || !selectedAgencyOption.value || !selectedStopOption.value) {
+                alert('Please select all fields.');
                 return;
             }
             
-            favorite.agencyName = agency.name;
-            favorite.stopName = stop.stopName;
-            favorite.active = agency.active && stop.active;
+            favorite.agencyName = selectedAgencyOption.textContent;
+            favorite.stopName = selectedStopOption.textContent;
             
             favorites.push(favorite);
             saveFavorites();
