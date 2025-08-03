@@ -284,30 +284,50 @@
                     </select>
                 </div>
                 
-                <div class="form-group">
-                    <label for="route">Route</label>
-                    <select id="route" required disabled onchange="onRouteChange()">
-                        <option value="">Select agency first...</option>
-                    </select>
+                <div id="agencySpecificFields" style="display: none;">
+                    <div class="form-group" id="routeGroup" style="display: none;">
+                        <label for="route">Route</label>
+                        <select id="route" required disabled onchange="onRouteChange()">
+                            <option value="">Select agency first...</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group" id="stopGroup" style="display: none;">
+                        <label for="stop">Stop</label>
+                        <select id="stop" required disabled onchange="onStopChange()">
+                            <option value="">Select route first...</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group" id="bartStationGroup" style="display: none;">
+                        <label for="bartStation">Station</label>
+                        <select id="bartStation" onchange="onBartStationChange()">
+                            <option value="">Loading stations...</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group" id="bartLinesSelectGroup" style="display: none;">
+                        <label for="bartLinesSelect">Lines (select one or more)</label>
+                        <select id="bartLinesSelect" multiple style="width: 100%; padding: 10px; border: 1px solid #d1d1d6; border-radius: 8px; font-size: 16px; min-height: 120px;">
+                            <option value="red">Red Line</option>
+                            <option value="yellow">Yellow Line</option>
+                            <option value="green">Green Line</option>
+                            <option value="blue">Blue Line</option>
+                        </select>
+                        <small style="color: #8e8e93;">Hold Ctrl/Cmd to select multiple lines</small>
+                    </div>
+                    
+                    <div class="form-group" id="directionGroup">
+                        <label for="direction">Direction</label>
+                        <select id="direction" required disabled>
+                            <option value="">Select stop first...</option>
+                        </select>
+                    </div>
+                    
+                    <button type="submit" class="btn" style="width: 100%;">
+                        Add Favorite
+                    </button>
                 </div>
-                
-                <div class="form-group">
-                    <label for="stop">Stop</label>
-                    <select id="stop" required disabled onchange="onStopChange()">
-                        <option value="">Select route first...</option>
-                    </select>
-                </div>
-                
-                <div class="form-group">
-                    <label for="direction">Direction</label>
-                    <select id="direction" required disabled>
-                        <option value="">Select stop first...</option>
-                    </select>
-                </div>
-                
-                <button type="submit" class="btn" style="width: 100%;">
-                    Add Favorite
-                </button>
             </form>
         </div>
     </div>
@@ -412,6 +432,41 @@
             }
         }
         
+        // Load BART stations
+        async function loadBartStations() {
+            try {
+                const response = await fetch('/api/transit/bart/stations');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const select = document.getElementById('bartStation');
+                    select.innerHTML = '<option value="">Select station...</option>';
+                    
+                    data.stations.forEach(station => {
+                        const option = document.createElement('option');
+                        option.value = station.code;
+                        option.textContent = station.name;
+                        select.appendChild(option);
+                    });
+                    
+                    return data.stations;
+                } else {
+                    throw new Error('Failed to load BART stations');
+                }
+            } catch (error) {
+                console.error('Failed to load BART stations:', error);
+                const select = document.getElementById('bartStation');
+                select.innerHTML = '<option value="">Failed to load stations</option>';
+                return null;
+            }
+        }
+        
+        // Handle BART station selection
+        function onBartStationChange() {
+            // For BART, we don't need to load anything else after station selection
+            // The user just needs to select lines and direction
+        }
+        
         // Populate agency dropdown
         function populateAgencySelect() {
             const select = document.getElementById('agency');
@@ -434,6 +489,23 @@
             const routeSelect = document.getElementById('route');
             const stopSelect = document.getElementById('stop');
             const directionSelect = document.getElementById('direction');
+            const agencySpecificFields = document.getElementById('agencySpecificFields');
+            
+            if (!agencyCode) {
+                // Hide all fields if no agency selected
+                agencySpecificFields.style.display = 'none';
+                return;
+            }
+            
+            // Show the agency-specific fields
+            agencySpecificFields.style.display = 'block';
+            
+            // Show/hide appropriate fields based on agency
+            const isBart = agencyCode === 'bart';
+            document.getElementById('routeGroup').style.display = isBart ? 'none' : 'block';
+            document.getElementById('stopGroup').style.display = isBart ? 'none' : 'block';
+            document.getElementById('bartStationGroup').style.display = isBart ? 'block' : 'none';
+            document.getElementById('bartLinesSelectGroup').style.display = isBart ? 'block' : 'none';
             
             // Reset downstream selections
             routeSelect.innerHTML = '<option value="">Loading routes...</option>';
@@ -443,31 +515,40 @@
             stopSelect.disabled = true;
             directionSelect.disabled = true;
             
-            if (!agencyCode) {
-                routeSelect.innerHTML = '<option value="">Select route...</option>';
-                return;
-            }
+            // Make fields required/not required based on agency
+            routeSelect.required = !isBart;
+            stopSelect.required = !isBart;
+            document.getElementById('bartStation').required = isBart;
+            document.getElementById('bartLinesSelect').required = isBart;
             
-            // Load routes for this agency
-            const routes = await loadRoutes(agencyCode);
-            
-            if (!routes) {
-                routeSelect.innerHTML = '<option value="">Failed to load routes</option>';
-                return;
-            }
-            
-            // Populate routes
-            routeSelect.innerHTML = '<option value="">Select route...</option>';
-            routes.forEach(route => {
-                const option = document.createElement('option');
-                option.value = route.routeCode;
-                option.textContent = route.routeCode;
-                if (route.routeName && route.routeName !== route.routeCode) {
-                    option.textContent += ` - ${route.routeName}`;
+            if (isBart) {
+                // Load BART stations
+                await loadBartStations();
+                // Enable direction select for BART
+                directionSelect.innerHTML = '<option value="">Select direction...</option><option value="n">Northbound</option><option value="s">Southbound</option>';
+                directionSelect.disabled = false;
+            } else {
+                // Load routes for AC Transit
+                const routes = await loadRoutes(agencyCode);
+                
+                if (!routes) {
+                    routeSelect.innerHTML = '<option value="">Failed to load routes</option>';
+                    return;
                 }
-                routeSelect.appendChild(option);
-            });
-            routeSelect.disabled = false;
+                
+                // Populate routes
+                routeSelect.innerHTML = '<option value="">Select route...</option>';
+                routes.forEach(route => {
+                    const option = document.createElement('option');
+                    option.value = route.routeCode;
+                    option.textContent = route.routeCode;
+                    if (route.routeName && route.routeName !== route.routeCode) {
+                        option.textContent += ` - ${route.routeName}`;
+                    }
+                    routeSelect.appendChild(option);
+                });
+                routeSelect.disabled = false;
+            }
         }
         
         // Handle route selection
@@ -596,45 +677,94 @@
             document.getElementById('route').disabled = true;
             document.getElementById('stop').disabled = true;
             document.getElementById('direction').disabled = true;
+            
+            // Hide all agency-specific fields
+            document.getElementById('agencySpecificFields').style.display = 'none';
+            
+            // Reset field visibility for next time
+            document.getElementById('bartStationGroup').style.display = 'none';
+            document.getElementById('bartLinesSelectGroup').style.display = 'none';
+            document.getElementById('routeGroup').style.display = 'none';
+            document.getElementById('stopGroup').style.display = 'none';
         }
         
         // Handle form submission
         document.getElementById('addFavoriteForm').addEventListener('submit', (e) => {
             e.preventDefault();
             
-            const directionSelect = document.getElementById('direction');
-            const selectedDirectionOption = directionSelect.options[directionSelect.selectedIndex];
+            const agencyCode = document.getElementById('agency').value;
+            const isBart = agencyCode === 'bart';
             
-            // Get the specific stop ID for the selected direction
-            let stopId = document.getElementById('stop').value;
-            if (selectedDirectionOption && selectedDirectionOption.dataset.stopId) {
-                stopId = selectedDirectionOption.dataset.stopId;
+            let favorite;
+            
+            if (isBart) {
+                // Handle BART submission
+                const bartStation = document.getElementById('bartStation');
+                const bartLinesSelect = document.getElementById('bartLinesSelect');
+                const selectedLines = Array.from(bartLinesSelect.selectedOptions).map(opt => opt.value);
+                
+                if (!bartStation.value || selectedLines.length === 0) {
+                    alert('Please select a station and at least one line.');
+                    return;
+                }
+                
+                favorite = {
+                    id: Date.now().toString(),
+                    agency: agencyCode,
+                    route: selectedLines.join(','), // Comma-separated lines
+                    stop: bartStation.value,
+                    direction: document.getElementById('direction').value,
+                    predictions: [],
+                    active: true
+                };
+                
+                // Get display names
+                const selectedStationOption = bartStation.options[bartStation.selectedIndex];
+                favorite.agencyName = 'BART';
+                favorite.stopName = selectedStationOption.textContent;
+                
+            } else {
+                // Handle AC Transit submission
+                const directionSelect = document.getElementById('direction');
+                const selectedDirectionOption = directionSelect.options[directionSelect.selectedIndex];
+                
+                // Get the specific stop ID for the selected direction
+                let stopId = document.getElementById('stop').value;
+                if (selectedDirectionOption && selectedDirectionOption.dataset.stopId) {
+                    stopId = selectedDirectionOption.dataset.stopId;
+                }
+                
+                favorite = {
+                    id: Date.now().toString(),
+                    agency: agencyCode,
+                    route: document.getElementById('route').value,
+                    stop: stopId, // Use the direction-specific stop ID
+                    direction: document.getElementById('direction').value,
+                    predictions: [],
+                    active: true
+                };
+                
+                // Get display names from the select elements
+                const agencySelect = document.getElementById('agency');
+                const stopSelect = document.getElementById('stop');
+                
+                const selectedAgencyOption = agencySelect.options[agencySelect.selectedIndex];
+                const selectedStopOption = stopSelect.options[stopSelect.selectedIndex];
+                
+                if (!selectedAgencyOption || !selectedStopOption || !selectedAgencyOption.value || !selectedStopOption.value) {
+                    alert('Please select all fields.');
+                    return;
+                }
+                
+                favorite.agencyName = selectedAgencyOption.textContent;
+                favorite.stopName = selectedStopOption.textContent;
             }
             
-            const favorite = {
-                id: Date.now().toString(),
-                agency: document.getElementById('agency').value,
-                route: document.getElementById('route').value,
-                stop: stopId, // Use the direction-specific stop ID
-                direction: document.getElementById('direction').value,
-                predictions: [],
-                active: true // Default to active until proven otherwise
-            };
-            
-            // Get display names from the select elements
-            const agencySelect = document.getElementById('agency');
-            const stopSelect = document.getElementById('stop');
-            
-            const selectedAgencyOption = agencySelect.options[agencySelect.selectedIndex];
-            const selectedStopOption = stopSelect.options[stopSelect.selectedIndex];
-            
-            if (!selectedAgencyOption || !selectedStopOption || !selectedAgencyOption.value || !selectedStopOption.value) {
-                alert('Please select all fields.');
+            // Validate direction for BART
+            if (isBart && !favorite.direction) {
+                alert('Please select a direction for BART.');
                 return;
             }
-            
-            favorite.agencyName = selectedAgencyOption.textContent;
-            favorite.stopName = selectedStopOption.textContent;
             
             favorites.push(favorite);
             saveFavorites();
@@ -681,7 +811,15 @@
                     <div class="favorite-header">
                         <div class="favorite-info">
                             <h3>${favorite.stopName}</h3>
-                            <p>${favorite.agencyName} • ${favorite.route} • ${favorite.direction}</p>
+                            <p>${favorite.agencyName} • ${
+                                favorite.agency === 'bart' 
+                                    ? favorite.route.split(',').map(line => line.charAt(0).toUpperCase() + line.slice(1)).join('/') + ' Line' + (favorite.route.includes(',') ? 's' : '')
+                                    : favorite.route
+                            } • ${
+                                favorite.agency === 'bart' && favorite.direction 
+                                    ? (favorite.direction === 'n' ? 'Northbound' : 'Southbound')
+                                    : favorite.direction
+                            }</p>
                         </div>
                         <button class="remove-btn" onclick="removeFavorite('${favorite.id}')">
                             Remove
@@ -735,9 +873,14 @@
                     const predictionsDiv = document.getElementById(`predictions-${favorite.id}`);
                     
                     try {
-                        const response = await fetch(
-                            `/api/transit/predictions?agency=${favorite.agency}&stop=${favorite.stop}&route=${favorite.route}`
-                        );
+                        let url = `/api/transit/predictions?agency=${favorite.agency}&stop=${favorite.stop}&route=${favorite.route}`;
+                        
+                        // Add direction parameter for BART (required)
+                        if (favorite.agency === 'bart' && favorite.direction) {
+                            url += `&direction=${favorite.direction}`;
+                        }
+                        
+                        const response = await fetch(url);
                         const data = await response.json();
                         
                         // Determine if the stop/route is active based on server response

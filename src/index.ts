@@ -10,6 +10,7 @@ import { Agencies } from "./endpoints/agencies";
 import { Routes } from "./endpoints/routes";
 import { Stops } from "./endpoints/stops";
 import { StopDirections } from "./endpoints/stopDirections";
+import { BartStations } from "./endpoints/bartStations";
 
 // Start a Hono app
 const app = new Hono<{ Bindings: Env }>();
@@ -34,6 +35,7 @@ openapi.get("/api/transit/agencies", Agencies);
 openapi.get("/api/transit/routes", Routes);
 openapi.get("/api/transit/stops", Stops);
 openapi.get("/api/transit/stop-directions", StopDirections);
+openapi.get("/api/transit/bart/stations", BartStations);
 
 // You may also register routes for non OpenAPI directly on Hono
 // app.get('/test', (c) => c.text('Hono!'))
