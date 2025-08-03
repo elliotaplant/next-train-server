@@ -812,7 +812,11 @@
             saveFavorites();
             hideAddModal();
             renderFavorites();
-            refreshPredictions();
+            
+            // Small delay to ensure DOM is ready before fetching predictions
+            setTimeout(() => {
+                refreshPredictions();
+            }, 100);
         });
         
         // Remove favorite
