@@ -2,15 +2,14 @@
 
 ## Project Overview
 
-This is a Cloudflare Worker that serves as the backend for the NextTrain iOS app and web client. It proxies and caches transit API requests, stores metadata in a D1 database, and provides a web interface for viewing real-time transit predictions.
+This is a Cloudflare Worker that serves as the backend for the NextTrain iOS app and web client. It proxies transit API requests and provides a web interface for viewing real-time transit predictions.
 
 ## Key Architecture Decisions
 
-### Caching Strategy
-- **Metadata (routes, stops)**: Cached in D1 database for 24 hours
-- **Predictions**: Cached using Cloudflare Cache API for 10 seconds
-- **Stale-while-error**: Serves stale data if API fails after cache expires
-- **Cache flags**: All responses include `cache: { cached: boolean, fresh: boolean }`
+### API Strategy
+- **Direct API calls**: All data is fetched directly from transit APIs on-demand
+- **No caching**: Responses are always fresh from the source APIs
+- **Simple architecture**: No database or cache layers to manage
 
 ### Stop Deduplication
 Some stops have multiple IDs for the same physical location (different platforms/directions). We handle this by:
@@ -28,7 +27,7 @@ The `active` field is **server-determined** based on whether predictions are ava
 npm run dev
 # Server runs on http://localhost:8787
 # Test endpoints:
-curl http://localhost:8787/api/transit/predictions?agency=actransit&stop=55558&route=NL
+node scripts/fetch.js http://localhost:8787/api/transit/predictions?agency=actransit&stop=55558&route=NL
 ```
 
 ### Deployment
@@ -36,29 +35,10 @@ curl http://localhost:8787/api/transit/predictions?agency=actransit&stop=55558&r
 npm run deploy
 ```
 
-### Database Operations
-```bash
-# Local database
-wrangler d1 execute next-train-db --local --file=./schema.sql
-
-# Production database  
-wrangler d1 execute next-train-db --file=./schema.sql
-
-# Query local database
-wrangler d1 execute next-train-db --local --command "SELECT * FROM routes WHERE route_code='NL'"
-```
-
-### Data Population
-Routes and stops are fetched on-demand from the AC Transit API when:
-1. They're accessed for the first time
-2. The cached data is older than 24 hours
-
-No manual sync is needed - the system self-populates.
-
 ## Important Files
 
-- `src/endpoints/transitPredictions.ts` - Real-time predictions with 10s cache
-- `src/endpoints/routes.ts` - Routes with 24hr cache and stale-while-error
+- `src/endpoints/transitPredictions.ts` - Real-time predictions
+- `src/endpoints/routes.ts` - Routes fetched from AC Transit API
 - `src/endpoints/stops.ts` - Stops with deduplication logic
 - `src/endpoints/stopDirections.ts` - Direction-specific stop IDs
 - `src/clients/AcTransitClient.ts` - AC Transit API integration with timezone handling
@@ -88,32 +68,27 @@ echo "YOUR_KEY" | wrangler secret put AC_TRANSIT_API_KEY --local
 wrangler secret put AC_TRANSIT_API_KEY
 ```
 
-## Database Schema
-
-Key tables:
-- `agencies` - Transit agencies (currently just AC Transit)
-- `routes` - Bus/train routes with 24hr cache via `updated_at`
-- `stops` - Physical stops with coordinates
-- `directions` - Route directions (e.g., "To San Francisco")
-- `stop_routes` - Junction table linking stops, routes, and directions
+## Note on curl
+Do not use `curl`.
+Instead, use `node scripts/fetch.js`.
+It is exactly the same from a usage standpoint, but has security wrapping for usage with claude-code.
 
 ## Testing Specific Stops
 
 Common test cases:
 ```bash
 # Uptown Transit Center - NL route
-curl "http://localhost:8787/api/transit/predictions?agency=actransit&stop=55558&route=NL"
+node scripts/fetch.js "http://localhost:8787/api/transit/predictions?agency=actransit&stop=55558&route=NL"
 
 # Salesforce Transit Center - NL route  
-curl "http://localhost:8787/api/transit/predictions?agency=actransit&stop=50030&route=NL"
+node scripts/fetch.js "http://localhost:8787/api/transit/predictions?agency=actransit&stop=50030&route=NL"
 ```
 
 ## Debugging Tips
 
 1. Check server logs: Ask user to provide logs when testing locally
-2. Database state: Use `wrangler d1 execute` to inspect data
-3. Cache behavior: Check `cache` field in API responses
-4. Stop IDs: Verify comma-separated IDs are handled correctly
+2. API responses: All data comes directly from transit APIs
+3. Stop IDs: Verify comma-separated IDs are handled correctly
 
 ## Future Improvements
 
@@ -122,3 +97,9 @@ curl "http://localhost:8787/api/transit/predictions?agency=actransit&stop=50030&
 - Add route planning/trip suggestions
 - Push notifications for arrival times
 - Real-time vehicle tracking on map
+
+# important-instruction-reminders
+Do what has been asked; nothing more, nothing less.
+NEVER create files unless they're absolutely necessary for achieving your goal.
+ALWAYS prefer editing an existing file to creating a new one.
+NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.
