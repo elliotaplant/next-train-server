@@ -1,6 +1,7 @@
 import { Bool, OpenAPIRoute, Str, Query } from "chanfana";
 import { z } from "zod";
 import { type AppContext } from "../types";
+import { BartClient } from "../clients/BartClient";
 
 export class Routes extends OpenAPIRoute {
 	schema = {
@@ -80,57 +81,64 @@ export class Routes extends OpenAPIRoute {
 			}
 
 			// Cache is stale or empty, try to fetch fresh data
-			if (agency !== "actransit") {
-				// For non-AC Transit, return stale data if available
-				if (cachedRoutes.routes.length > 0) {
-					return {
-						success: true,
-						agency,
-						routes: cachedRoutes.routes,
-						cache: {
-							cached: true,
-							fresh: false,
-						},
-					};
-				}
-				
-				return Response.json(
-					{
-						success: false,
-						error: "Only AC Transit is currently supported",
-					},
-					{ status: 400 }
-				);
-			}
-
-			// Try to fetch fresh routes from AC Transit API
+			let routes: any[] = [];
+			
 			try {
-				const url = `https://api.actransit.org/transit/routes?token=${c.env.AC_TRANSIT_API_KEY}`;
-				const response = await fetch(url);
+				if (agency === "actransit") {
+					// Fetch AC Transit routes
+					const url = `https://api.actransit.org/transit/routes?token=${c.env.AC_TRANSIT_API_KEY}`;
+					const response = await fetch(url);
 
-				if (!response.ok) {
-					throw new Error(`AC Transit API error: ${response.status}`);
-				}
-
-				const routesData = await response.json();
-
-				// Transform the data
-				const routes = routesData.map((route: any) => ({
-					routeCode: route.RouteId,
-					routeName: route.Name || route.RouteId,
-					routeType: "bus",
-					active: true,
-				})).sort((a: any, b: any) => {
-					// Sort numerically first, then alphabetically
-					const aNum = parseInt(a.routeCode);
-					const bNum = parseInt(b.routeCode);
-					if (!isNaN(aNum) && !isNaN(bNum)) {
-						return aNum - bNum;
+					if (!response.ok) {
+						throw new Error(`AC Transit API error: ${response.status}`);
 					}
-					if (!isNaN(aNum)) return -1;
-					if (!isNaN(bNum)) return 1;
-					return a.routeCode.localeCompare(b.routeCode);
-				});
+
+					const routesData = await response.json();
+
+					// Transform the data
+					routes = routesData.map((route: any) => ({
+						routeCode: route.RouteId,
+						routeName: route.Name || route.RouteId,
+						routeType: "bus",
+						active: true,
+					})).sort((a: any, b: any) => {
+						// Sort numerically first, then alphabetically
+						const aNum = parseInt(a.routeCode);
+						const bNum = parseInt(b.routeCode);
+						if (!isNaN(aNum) && !isNaN(bNum)) {
+							return aNum - bNum;
+						}
+						if (!isNaN(aNum)) return -1;
+						if (!isNaN(bNum)) return 1;
+						return a.routeCode.localeCompare(b.routeCode);
+					});
+				} else if (agency === "bart") {
+					// Fetch BART routes (color lines)
+					console.log('BART_API_KEY exists:', !!c.env.BART_API_KEY);
+					const bartClient = new BartClient(c.env.BART_API_KEY);
+					routes = await bartClient.getRoutes();
+				} else {
+					// Unsupported agency
+					if (cachedRoutes.routes.length > 0) {
+						return {
+							success: true,
+							agency,
+							routes: cachedRoutes.routes,
+							cache: {
+								cached: true,
+								fresh: false,
+							},
+						};
+					}
+					
+					return Response.json(
+						{
+							success: false,
+							error: "Only AC Transit and BART are currently supported",
+						},
+						{ status: 400 }
+					);
+				}
 
 				// Cache the routes asynchronously
 				c.executionCtx.waitUntil(this.cacheRoutes(c.env.DB, agency, routes));

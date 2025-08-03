@@ -2,6 +2,7 @@
 interface Env {
 	// Secrets
 	AC_TRANSIT_API_KEY: string;
+	BART_API_KEY: string;
 	ADMIN_SYNC_TOKEN: string;
 	
 	// Email binding

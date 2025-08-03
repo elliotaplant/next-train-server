@@ -2,6 +2,7 @@ import { OpenAPIRoute, Str, Num } from "chanfana";
 import { z } from "zod";
 import { type AppContext } from "../types";
 import { AcTransitClient, type TransitPrediction } from "../clients/AcTransitClient";
+import { BartClient } from "../clients/BartClient";
 
 export class TransitPredictions extends OpenAPIRoute {
 	schema = {
@@ -120,12 +121,17 @@ export class TransitPredictions extends OpenAPIRoute {
 					const acTransitClient = new AcTransitClient(c.env.AC_TRANSIT_API_KEY);
 					predictions = await acTransitClient.getPredictions(stop, route);
 					break;
+				
+				case "bart":
+					const bartClient = new BartClient(c.env.BART_API_KEY);
+					predictions = await bartClient.getPredictions(stop, route);
+					break;
 					
 				default:
 					return Response.json(
 						{
 							success: false,
-							error: `Unsupported agency: ${agency}. Currently only 'actransit' is supported.`,
+							error: `Unsupported agency: ${agency}. Currently only 'actransit' and 'bart' are supported.`,
 						},
 						{ status: 400 }
 					);

@@ -1,6 +1,7 @@
 import { Bool, OpenAPIRoute, Str, Query } from "chanfana";
 import { z } from "zod";
 import { type AppContext } from "../types";
+import { BartClient } from "../clients/BartClient";
 
 export class Stops extends OpenAPIRoute {
 	schema = {
@@ -95,54 +96,77 @@ export class Stops extends OpenAPIRoute {
 			}
 
 			// Cache is stale or empty, try to fetch fresh data
-			if (agency !== "actransit") {
-				// For non-AC Transit, return stale data if available
-				if (cachedStops.stops.length > 0) {
+			let stops: any[] = [];
+			let routeStopsData: any[] = [];
+			
+			try {
+				if (agency === "actransit") {
+					// Fetch AC Transit stops
+					const url = `https://api.actransit.org/transit/route/${encodeURIComponent(route)}/stops?token=${c.env.AC_TRANSIT_API_KEY}`;
+					const response = await fetch(url);
+
+					if (!response.ok) {
+						if (response.status === 404) {
+							// Route doesn't exist, don't return stale data
+							return Response.json(
+								{
+									success: false,
+									error: `Route ${route} not found`,
+								},
+								{ status: 404 }
+							);
+						}
+						throw new Error(`AC Transit API error: ${response.status}`);
+					}
+
+					routeStopsData = await response.json();
+				} else if (agency === "bart") {
+					// For BART, return all stations (BART is a connected system)
+					// In a real implementation, we'd filter by actual route connections
+					const bartClient = new BartClient(c.env.BART_API_KEY);
+					const stations = await bartClient.getStations();
+					
+					// Return stations sorted alphabetically
+					stops = stations.sort((a: any, b: any) => a.stopName.localeCompare(b.stopName));
+					
+					// Return immediately for BART (no need to process like AC Transit)
 					return {
 						success: true,
 						agency,
 						route,
-						stops: cachedStops.stops,
+						stops,
 						cache: {
-							cached: true,
-							fresh: false,
+							cached: false,
+							fresh: true,
 						},
 					};
-				}
-				
-				return Response.json(
-					{
-						success: false,
-						error: "Only AC Transit is currently supported",
-					},
-					{ status: 400 }
-				);
-			}
-
-			// Try to fetch fresh stops from AC Transit API
-			try {
-				const url = `https://api.actransit.org/transit/route/${encodeURIComponent(route)}/stops?token=${c.env.AC_TRANSIT_API_KEY}`;
-				const response = await fetch(url);
-
-				if (!response.ok) {
-					if (response.status === 404) {
-						// Route doesn't exist, don't return stale data
-						return Response.json(
-							{
-								success: false,
-								error: `Route ${route} not found`,
+				} else {
+					// Unsupported agency
+					if (cachedStops.stops.length > 0) {
+						return {
+							success: true,
+							agency,
+							route,
+							stops: cachedStops.stops,
+							cache: {
+								cached: true,
+								fresh: false,
 							},
-							{ status: 404 }
-						);
+						};
 					}
-					throw new Error(`AC Transit API error: ${response.status}`);
+					
+					return Response.json(
+						{
+							success: false,
+							error: "Only AC Transit and BART are currently supported",
+						},
+						{ status: 400 }
+					);
 				}
 
-			const routeStopsData = await response.json();
-
-			// Extract unique stop NAMES (not IDs) across all directions
-			// Group stops by name to handle cases where one location has multiple IDs
-			const stopsByName = new Map();
+				// Extract unique stop NAMES (not IDs) across all directions
+				// Group stops by name to handle cases where one location has multiple IDs
+				const stopsByName = new Map();
 			
 			for (const routeDirection of routeStopsData) {
 				for (const stop of routeDirection.Stops) {
@@ -161,9 +185,9 @@ export class Stops extends OpenAPIRoute {
 				}
 			}
 			
-			// Create one entry per unique stop name
-			// For stops with multiple IDs, we'll use a comma-separated list of IDs
-			const stops = Array.from(stopsByName.entries()).map(([name, stopList]) => {
+				// Create one entry per unique stop name
+				// For stops with multiple IDs, we'll use a comma-separated list of IDs
+				stops = Array.from(stopsByName.entries()).map(([name, stopList]) => {
 				if (stopList.length === 1) {
 					// Single stop ID for this name
 					return {

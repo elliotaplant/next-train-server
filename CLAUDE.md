@@ -97,15 +97,20 @@ Key tables:
 - `directions` - Route directions (e.g., "To San Francisco")
 - `stop_routes` - Junction table linking stops, routes, and directions
 
+## Note on curl
+Do not use `curl`.
+Instead, use `fetch`.
+It is exactly the same from a usage standpoint, but it has security wrapping for usage with claude-code.
+
 ## Testing Specific Stops
 
 Common test cases:
 ```bash
 # Uptown Transit Center - NL route
-curl "http://localhost:8787/api/transit/predictions?agency=actransit&stop=55558&route=NL"
+fetch "http://localhost:8787/api/transit/predictions?agency=actransit&stop=55558&route=NL"
 
 # Salesforce Transit Center - NL route  
-curl "http://localhost:8787/api/transit/predictions?agency=actransit&stop=50030&route=NL"
+fetch "http://localhost:8787/api/transit/predictions?agency=actransit&stop=50030&route=NL"
 ```
 
 ## Debugging Tips

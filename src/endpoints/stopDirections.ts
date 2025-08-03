@@ -1,6 +1,7 @@
 import { Bool, OpenAPIRoute, Str, Query } from "chanfana";
 import { z } from "zod";
 import { type AppContext } from "../types";
+import { BartClient } from "../clients/BartClient";
 
 export class StopDirections extends OpenAPIRoute {
 	schema = {
@@ -77,70 +78,82 @@ export class StopDirections extends OpenAPIRoute {
 		const { agency, route, stop } = data.query;
 
 		try {
-			// First check cached data
-			const cachedDirections = await this.getCachedDirections(c.env.DB, agency, route, stop);
-			
-			if (cachedDirections.length > 0) {
-				return {
-					success: true,
-					agency,
-					route,
-					stop,
-					directions: cachedDirections,
-				};
+			// For BART, always fetch fresh directions since they change based on real-time schedule
+			if (agency !== "bart") {
+				// First check cached data for non-BART agencies
+				const cachedDirections = await this.getCachedDirections(c.env.DB, agency, route, stop);
+				
+				if (cachedDirections.length > 0) {
+					return {
+						success: true,
+						agency,
+						route,
+						stop,
+						directions: cachedDirections,
+					};
+				}
 			}
 
-			// If not cached, fetch from AC Transit API
-			if (agency !== "actransit") {
+			// If not cached, fetch from API
+			let directionsForStop: any[] = [];
+			
+			if (agency === "actransit") {
+				// Fetch route data to find directions serving this stop
+				const url = `https://api.actransit.org/transit/route/${encodeURIComponent(route)}/stops?token=${c.env.AC_TRANSIT_API_KEY}`;
+				const response = await fetch(url);
+
+				if (!response.ok) {
+					if (response.status === 404) {
+						return Response.json(
+							{
+								success: false,
+								error: `Route ${route} not found`,
+							},
+							{ status: 404 }
+						);
+					}
+					throw new Error(`AC Transit API error: ${response.status}`);
+				}
+
+				const routeStopsData = await response.json();
+
+				// Handle comma-separated stop IDs (for stops with same name but different IDs)
+				const stopIds = stop.split(',').map(id => id.trim());
+				
+				// Find directions that serve any of these stop IDs
+				// Also track which stop ID serves which direction
+				const directionsMap = new Map();
+				
+				for (const routeDirection of routeStopsData) {
+					for (const stopId of stopIds) {
+						const hasStop = routeDirection.Stops.some((s: any) => s.StopId.toString() === stopId);
+						if (hasStop && !directionsMap.has(routeDirection.Direction)) {
+							directionsMap.set(routeDirection.Direction, {
+								direction: routeDirection.Direction,
+								destination: routeDirection.Destination,
+								stopId: stopId, // Include which stop ID to use for this direction
+							});
+						}
+					}
+				}
+				
+				directionsForStop = Array.from(directionsMap.values());
+			} else if (agency === "bart") {
+				// For BART, get directions based on real-time departures
+				// BART doesn't filter by route - all trains from a station are available
+				console.log('Getting BART directions for stop:', stop);
+				const bartClient = new BartClient(c.env.BART_API_KEY);
+				directionsForStop = await bartClient.getDirectionsForStop(stop);
+				console.log('BART directions found:', directionsForStop.length);
+			} else {
 				return Response.json(
 					{
 						success: false,
-						error: "Only AC Transit is currently supported",
+						error: "Only AC Transit and BART are currently supported",
 					},
 					{ status: 400 }
 				);
 			}
-
-			// Fetch route data to find directions serving this stop
-			const url = `https://api.actransit.org/transit/route/${encodeURIComponent(route)}/stops?token=${c.env.AC_TRANSIT_API_KEY}`;
-			const response = await fetch(url);
-
-			if (!response.ok) {
-				if (response.status === 404) {
-					return Response.json(
-						{
-							success: false,
-							error: `Route ${route} not found`,
-						},
-						{ status: 404 }
-					);
-				}
-				throw new Error(`AC Transit API error: ${response.status}`);
-			}
-
-			const routeStopsData = await response.json();
-
-			// Handle comma-separated stop IDs (for stops with same name but different IDs)
-			const stopIds = stop.split(',').map(id => id.trim());
-			
-			// Find directions that serve any of these stop IDs
-			// Also track which stop ID serves which direction
-			const directionsMap = new Map();
-			
-			for (const routeDirection of routeStopsData) {
-				for (const stopId of stopIds) {
-					const hasStop = routeDirection.Stops.some((s: any) => s.StopId.toString() === stopId);
-					if (hasStop && !directionsMap.has(routeDirection.Direction)) {
-						directionsMap.set(routeDirection.Direction, {
-							direction: routeDirection.Direction,
-							destination: routeDirection.Destination,
-							stopId: stopId, // Include which stop ID to use for this direction
-						});
-					}
-				}
-			}
-			
-			const directionsForStop = Array.from(directionsMap.values());
 
 			if (directionsForStop.length === 0) {
 				return Response.json(
