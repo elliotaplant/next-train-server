@@ -48,12 +48,12 @@ wrangler d1 execute next-train-db --file=./schema.sql
 wrangler d1 execute next-train-db --local --command "SELECT * FROM routes WHERE route_code='NL'"
 ```
 
-### Manual Data Sync
-```bash
-# Trigger AC Transit sync
-curl -X POST http://localhost:8787/api/sync/actransit \
-  -H "Authorization: Bearer YOUR_AUTH_TOKEN"
-```
+### Data Population
+Routes and stops are fetched on-demand from the AC Transit API when:
+1. They're accessed for the first time
+2. The cached data is older than 24 hours
+
+No manual sync is needed - the system self-populates.
 
 ## Important Files
 

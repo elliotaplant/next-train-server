@@ -12,9 +12,7 @@ import { Agencies } from "./endpoints/agencies";
 import { Routes } from "./endpoints/routes";
 import { Stops } from "./endpoints/stops";
 import { StopDirections } from "./endpoints/stopDirections";
-import { SyncTransitData } from "./endpoints/syncTransitData";
 import { ImportACTransitData } from "./endpoints/importACTransitData";
-import { TransitDataSync } from "./services/TransitDataSync";
 
 // Start a Hono app
 const app = new Hono<{ Bindings: Env }>();
@@ -45,32 +43,12 @@ openapi.get("/api/transit/stops", Stops);
 openapi.get("/api/transit/stop-directions", StopDirections);
 
 // Admin endpoints
-openapi.post("/api/admin/sync-transit-data", SyncTransitData);
 openapi.post("/api/admin/import-actransit-data", ImportACTransitData);
 
 // You may also register routes for non OpenAPI directly on Hono
 // app.get('/test', (c) => c.text('Hono!'))
 
-// Export the Hono app and scheduled handler
+// Export the Hono app
 export default {
 	fetch: app.fetch,
-	scheduled: async (controller: ScheduledController, env: Env, ctx: ExecutionContext) => {
-		console.log("Running scheduled transit data sync");
-		
-		try {
-			const syncService = new TransitDataSync(env.DB, env);
-			const results = await syncService.syncAll();
-			
-			console.log("Sync completed:", JSON.stringify(results));
-			
-			// Log to a metrics service or send notification if needed
-			const hasErrors = results.some(r => r.error);
-			if (hasErrors) {
-				console.error("Sync completed with errors:", results.filter(r => r.error));
-			}
-		} catch (error) {
-			console.error("Scheduled sync failed:", error);
-			// In production, you might want to send an alert
-		}
-	}
 };

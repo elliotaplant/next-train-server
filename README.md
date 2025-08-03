@@ -9,8 +9,7 @@ A Cloudflare Worker that provides a backend API and web interface for the NextTr
 - **Favorites System**: Save and manage favorite stops with localStorage
 - **Smart Caching**: 24-hour cache for metadata, 10-second cache for predictions, with stale-while-error fallback
 - **Support Page**: Contact form with Cloudflare Email Routing integration
-- **Database Storage**: D1 database for transit metadata (agencies, routes, stops, directions)
-- **Weekly Updates**: Cron trigger for updating transit metadata
+- **Database Storage**: D1 database for caching transit metadata (agencies, routes, stops, directions)
 
 ## Architecture
 
@@ -105,9 +104,6 @@ The server will be available at `http://localhost:8787`
 
 - `POST /api/support` - Submit support request
 
-### Admin
-
-- `POST /api/sync/actransit` - Manually sync AC Transit data (protected)
 
 ## Deployment
 
@@ -116,15 +112,12 @@ The server will be available at `http://localhost:8787`
 npm run deploy
 ```
 
-2. Initialize production database:
+2. Initialize production database (if not already done):
 ```bash
-wrangler d1 execute next-train-db --file=./schema.sql
+wrangler d1 execute next-train-db --file=./migrations/0001_create_transit_schema.sql
 ```
 
-3. Verify cron trigger is set up (runs weekly at 2 AM Sunday):
-```bash
-wrangler tail
-```
+Note: The database will auto-populate with transit data as users access different routes.
 
 ## Caching Strategy
 
