@@ -301,7 +301,7 @@
                     
                     <div class="form-group" id="bartStationGroup" style="display: none;">
                         <label for="bartStation">Station</label>
-                        <select id="bartStation" onchange="onBartStationChange()">
+                        <select id="bartStation" disabled onchange="onBartStationChange()">
                             <option value="">Loading stations...</option>
                         </select>
                     </div>
@@ -449,6 +449,9 @@
                         select.appendChild(option);
                     });
                     
+                    // Enable the select after loading stations
+                    select.disabled = false;
+                    
                     return data.stations;
                 } else {
                     throw new Error('Failed to load BART stations');
@@ -457,6 +460,8 @@
                 console.error('Failed to load BART stations:', error);
                 const select = document.getElementById('bartStation');
                 select.innerHTML = '<option value="">Failed to load stations</option>';
+                // Enable the select even on error so user can see the message
+                select.disabled = false;
                 return null;
             }
         }
