@@ -1,6 +1,10 @@
 # NextTrain Server
 
-A Cloudflare Worker that provides a backend API and web interface for the NextTrain transit app. It acts as an authenticated proxy for transit APIs, currently supporting AC Transit.
+A Cloudflare Worker that provides a backend API and web interface for the NextTrain transit app. It acts as an authenticated proxy for transit APIs, currently supporting AC Transit and BART.
+
+## Related Projects
+
+- **iOS App**: Located at `../next-train` - The NextTrain iOS application that consumes this API
 
 ## Features
 
