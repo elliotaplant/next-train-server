@@ -28,10 +28,6 @@ export class Stops extends OpenAPIRoute {
 								lat: z.number().nullable(),
 								lon: z.number().nullable(),
 							})),
-							cache: z.object({
-								cached: Bool(),
-								fresh: Bool(),
-							}).optional(),
 						}),
 					},
 				},
@@ -77,39 +73,7 @@ export class Stops extends OpenAPIRoute {
 		const { agency, route } = data.query;
 
 		try {
-			// Check if we have cached stops
-			const cachedStops = await this.getCachedStops(c.env.DB, agency, route);
-			
-			// If cache is fresh (< 24 hours), return immediately
-			if (cachedStops.fresh && cachedStops.stops.length > 0) {
-				return {
-					success: true,
-					agency,
-					route,
-					stops: cachedStops.stops,
-					cache: {
-						cached: true,
-						fresh: true,
-					},
-				};
-			}
-
-			// Cache is stale or empty, try to fetch fresh data
 			if (agency !== "actransit") {
-				// For non-AC Transit, return stale data if available
-				if (cachedStops.stops.length > 0) {
-					return {
-						success: true,
-						agency,
-						route,
-						stops: cachedStops.stops,
-						cache: {
-							cached: true,
-							fresh: false,
-						},
-					};
-				}
-				
 				return Response.json(
 					{
 						success: false,
@@ -119,24 +83,22 @@ export class Stops extends OpenAPIRoute {
 				);
 			}
 
-			// Try to fetch fresh stops from AC Transit API
-			try {
-				const url = `https://api.actransit.org/transit/route/${encodeURIComponent(route)}/stops?token=${c.env.AC_TRANSIT_API_KEY}`;
-				const response = await fetch(url);
+			// Fetch stops directly from AC Transit API
+			const url = `https://api.actransit.org/transit/route/${encodeURIComponent(route)}/stops?token=${c.env.AC_TRANSIT_API_KEY}`;
+			const response = await fetch(url);
 
-				if (!response.ok) {
-					if (response.status === 404) {
-						// Route doesn't exist, don't return stale data
-						return Response.json(
-							{
-								success: false,
-								error: `Route ${route} not found`,
-							},
-							{ status: 404 }
-						);
-					}
-					throw new Error(`AC Transit API error: ${response.status}`);
+			if (!response.ok) {
+				if (response.status === 404) {
+					return Response.json(
+						{
+							success: false,
+							error: `Route ${route} not found`,
+						},
+						{ status: 404 }
+					);
 				}
+				throw new Error(`AC Transit API error: ${response.status}`);
+			}
 
 			const routeStopsData = await response.json();
 
@@ -186,39 +148,12 @@ export class Stops extends OpenAPIRoute {
 				}
 			}).sort((a, b) => a.stopName.localeCompare(b.stopName));
 
-				// Cache the data asynchronously
-				c.executionCtx.waitUntil(this.cacheStopsData(c.env.DB, agency, route, routeStopsData));
-
-				return {
-					success: true,
-					agency,
-					route,
-					stops,
-					cache: {
-						cached: false,
-						fresh: true,
-					},
-				};
-			} catch (fetchError) {
-				// API call failed, serve stale data if available
-				console.error("Failed to fetch fresh stops:", fetchError);
-				
-				if (cachedStops.stops.length > 0) {
-					return {
-						success: true,
-						agency,
-						route,
-						stops: cachedStops.stops,
-						cache: {
-							cached: true,
-							fresh: false,
-						},
-					};
-				}
-				
-				// No cached data available, throw the error
-				throw fetchError;
-			}
+			return {
+				success: true,
+				agency,
+				route,
+				stops,
+			};
 		} catch (error) {
 			console.error("Stops error:", error);
 			return Response.json(
@@ -228,160 +163,6 @@ export class Stops extends OpenAPIRoute {
 				},
 				{ status: 500 }
 			);
-		}
-	}
-
-	private async getCachedStops(db: D1Database, agencyCode: string, routeCode: string) {
-		try {
-			// First check when the route was last updated
-			const routeInfo = await db.prepare(`
-				SELECT r.updated_at
-				FROM routes r
-				JOIN agencies a ON r.agency_id = a.id
-				WHERE a.code = ? AND r.route_code = ?
-			`).bind(agencyCode, routeCode).first();
-
-			let fresh = false;
-			if (routeInfo && routeInfo.updated_at) {
-				const lastUpdate = new Date(routeInfo.updated_at);
-				const now = new Date();
-				const hoursSinceUpdate = (now.getTime() - lastUpdate.getTime()) / (1000 * 60 * 60);
-				fresh = hoursSinceUpdate < 24;
-			}
-
-			const result = await db.prepare(`
-				SELECT DISTINCT 
-					s.stop_code as stopCode,
-					s.stop_name as stopName,
-					s.lat,
-					s.lon
-				FROM stops s
-				JOIN agencies a ON s.agency_id = a.id
-				JOIN stop_routes sr ON s.id = sr.stop_id
-				JOIN routes r ON sr.route_id = r.id
-				WHERE a.code = ? AND r.route_code = ? AND s.active = TRUE
-				ORDER BY s.stop_name
-			`).bind(agencyCode, routeCode).all();
-
-			if (!result.results || result.results.length === 0) {
-				return { fresh, stops: [] };
-			}
-
-			// Group stops by name to handle duplicates
-			const stopsByName = new Map();
-			for (const stop of result.results) {
-				const stopName = stop.stopName;
-				if (!stopsByName.has(stopName)) {
-					stopsByName.set(stopName, []);
-				}
-				stopsByName.get(stopName).push({
-					stopId: stop.stopCode,
-					stopCode: stop.stopCode,
-					stopName: stop.stopName,
-					lat: stop.lat,
-					lon: stop.lon,
-				});
-			}
-
-			// Create one entry per unique stop name
-			const stops = Array.from(stopsByName.entries()).map(([name, stopList]) => {
-				if (stopList.length === 1) {
-					return stopList[0];
-				} else {
-					// Multiple stop IDs for this name - combine them
-					return {
-						stopId: stopList.map(s => s.stopId).join(','),
-						stopCode: stopList.map(s => s.stopCode).join(','),
-						stopName: name,
-						lat: stopList[0].lat,
-						lon: stopList[0].lon,
-					};
-				}
-			}).sort((a, b) => a.stopName.localeCompare(b.stopName));
-
-			return { fresh, stops };
-		} catch (error) {
-			console.error("Error fetching cached stops:", error);
-			return { fresh: false, stops: [] };
-		}
-	}
-
-	private async cacheStopsData(db: D1Database, agencyCode: string, routeCode: string, routeStopsData: any[]) {
-		// This is the same caching logic from routeStops.ts
-		// Reusing it to maintain consistency
-		try {
-			const agency = await db.prepare(
-				"SELECT id FROM agencies WHERE code = ?"
-			).bind(agencyCode).first();
-			
-			if (!agency) return;
-
-			const route = await db.prepare(
-				"SELECT id FROM routes WHERE agency_id = ? AND route_code = ?"
-			).bind(agency.id, routeCode).first();
-			
-			if (!route) return;
-
-			for (const routeDirection of routeStopsData) {
-				// Ensure direction exists
-				let direction = await db.prepare(
-					"SELECT id FROM directions WHERE route_id = ? AND direction_code = ?"
-				).bind(route.id, routeDirection.Direction).first();
-
-				if (!direction) {
-					await db.prepare(
-						"INSERT INTO directions (route_id, direction_code, headsign, active) VALUES (?, ?, ?, TRUE)"
-					).bind(route.id, routeDirection.Direction, routeDirection.Destination).run();
-					
-					direction = await db.prepare(
-						"SELECT id FROM directions WHERE route_id = ? AND direction_code = ?"
-					).bind(route.id, routeDirection.Direction).first();
-				}
-
-				// Import each stop
-				for (const stop of routeDirection.Stops) {
-					await db.prepare(`
-						INSERT INTO stops (agency_id, stop_code, stop_name, lat, lon, active)
-						VALUES (?, ?, ?, ?, ?, TRUE)
-						ON CONFLICT(agency_id, stop_code) 
-						DO UPDATE SET 
-							stop_name = excluded.stop_name,
-							lat = excluded.lat,
-							lon = excluded.lon,
-							active = TRUE,
-							updated_at = CURRENT_TIMESTAMP
-					`).bind(
-						agency.id,
-						stop.StopId.toString(),
-						stop.Name,
-						stop.Latitude,
-						stop.Longitude
-					).run();
-
-					const stopRecord = await db.prepare(
-						"SELECT id FROM stops WHERE agency_id = ? AND stop_code = ?"
-					).bind(agency.id, stop.StopId.toString()).first();
-
-					if (stopRecord && direction) {
-						await db.prepare(`
-							INSERT INTO stop_routes (stop_id, route_id, direction_id, stop_sequence, active)
-							VALUES (?, ?, ?, ?, TRUE)
-							ON CONFLICT(stop_id, route_id, direction_id) 
-							DO UPDATE SET 
-								stop_sequence = excluded.stop_sequence,
-								active = TRUE,
-								created_at = CURRENT_TIMESTAMP
-						`).bind(stopRecord.id, route.id, direction.id, stop.Order).run();
-					}
-				}
-			}
-
-			// Update route timestamp to mark cache as fresh
-			await db.prepare(
-				"UPDATE routes SET updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-			).bind(route.id).run();
-		} catch (error) {
-			console.error("Error caching stops:", error);
 		}
 	}
 }

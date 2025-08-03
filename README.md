@@ -1,15 +1,14 @@
 # NextTrain Server
 
-A Cloudflare Worker that provides a backend API and web interface for the NextTrain transit app. It acts as an authenticated proxy and cache for transit APIs, currently supporting AC Transit.
+A Cloudflare Worker that provides a backend API and web interface for the NextTrain transit app. It acts as an authenticated proxy for transit APIs, currently supporting AC Transit.
 
 ## Features
 
-- **Transit API Proxy**: Authenticated proxy for AC Transit API with intelligent caching
+- **Transit API Proxy**: Authenticated proxy for AC Transit API
 - **Web Interface**: Responsive web client for viewing real-time transit predictions
 - **Favorites System**: Save and manage favorite stops with localStorage
-- **Smart Caching**: 24-hour cache for metadata, 10-second cache for predictions, with stale-while-error fallback
+- **Real-time Data**: All data fetched directly from transit APIs on-demand
 - **Support Page**: Contact form with Cloudflare Email Routing integration
-- **Database Storage**: D1 database for caching transit metadata (agencies, routes, stops, directions)
 
 ## Architecture
 
@@ -17,19 +16,19 @@ A Cloudflare Worker that provides a backend API and web interface for the NextTr
 ├── src/
 │   ├── index.ts              # Main worker entry point
 │   ├── endpoints/             # API endpoints
-│   │   ├── agencies.ts        # List transit agencies
 │   │   ├── routes.ts          # Routes for an agency
 │   │   ├── stops.ts           # Stops for a route
 │   │   ├── stopDirections.ts  # Directions for a stop
 │   │   ├── transitPredictions.ts # Real-time predictions
-│   │   └── support.ts         # Support form handler
+│   │   └── supportEmail.ts    # Support form handler
 │   ├── clients/
 │   │   └── AcTransitClient.ts # AC Transit API client
 │   └── types.ts               # TypeScript types
 ├── public/
 │   ├── index.html             # Web client
 │   └── support.html           # Support page
-└── schema.sql                 # D1 database schema
+└── scripts/
+    └── fetch.js              # curl replacement script
 ```
 
 ## Local Development
@@ -54,25 +53,7 @@ cd next-train-server
 npm install
 ```
 
-3. Create D1 database:
-```bash
-wrangler d1 create next-train-db
-```
-
-4. Update `wrangler.toml` with your database ID:
-```toml
-[[d1_databases]]
-binding = "DB"
-database_name = "next-train-db"
-database_id = "YOUR_DATABASE_ID"
-```
-
-5. Initialize database schema:
-```bash
-wrangler d1 execute next-train-db --local --file=./schema.sql
-```
-
-6. Set up secrets:
+3. Set up secrets:
 ```bash
 # For local development
 echo "YOUR_AC_TRANSIT_API_KEY" | wrangler secret put AC_TRANSIT_API_KEY --local
@@ -83,7 +64,7 @@ wrangler secret put AC_TRANSIT_API_KEY
 wrangler secret put SUPPORT_EMAIL
 ```
 
-7. Start development server:
+4. Start development server:
 ```bash
 npm run dev
 ```
@@ -94,7 +75,6 @@ The server will be available at `http://localhost:8787`
 
 ### Transit Data
 
-- `GET /api/transit/agencies` - List all agencies
 - `GET /api/transit/routes?agency={code}` - Routes for an agency
 - `GET /api/transit/stops?agency={code}&route={code}` - Stops for a route
 - `GET /api/transit/stop-directions?agency={code}&route={code}&stop={code}` - Directions for a stop
@@ -112,35 +92,17 @@ The server will be available at `http://localhost:8787`
 npm run deploy
 ```
 
-2. Initialize production database (if not already done):
-```bash
-wrangler d1 execute next-train-db --file=./migrations/0001_create_transit_schema.sql
-```
+## Data Strategy
 
-Note: The database will auto-populate with transit data as users access different routes.
-
-## Caching Strategy
-
-- **Routes & Stops**: Cached in D1 for 24 hours, serves stale data on API failure
-- **Predictions**: Cached using Cache API for 10 seconds
-- **Response Flags**: All cached responses include metadata:
-  ```json
-  {
-    "cache": {
-      "cached": true,
-      "fresh": false
-    }
-  }
-  ```
+- **Real-time Data**: All data is fetched directly from transit APIs on-demand
+- **No Caching**: Every request gets fresh data from the source API
+- **Simple Architecture**: No database or cache layers to manage
 
 ## Environment Variables
 
 Required secrets:
 - `AC_TRANSIT_API_KEY`: API key for AC Transit
 - `SUPPORT_EMAIL`: Email address for support requests
-
-D1 Database binding:
-- `DB`: D1 database instance
 
 ## Web Client Features
 

@@ -10,7 +10,7 @@ export class StopDirections extends OpenAPIRoute {
 			query: z.object({
 				agency: Str({ description: "Transit agency code", example: "actransit" }),
 				route: Str({ description: "Route code", example: "NL" }),
-				stop: Str({ description: "Stop code", example: "55558" }),
+				stop: Str({ description: "Stop ID (can be comma-separated for combined stops)", example: "55558" }),
 			}),
 		},
 		responses: {
@@ -28,10 +28,6 @@ export class StopDirections extends OpenAPIRoute {
 								destination: Str(),
 								stopId: Str(),
 							})),
-							cache: z.object({
-								cached: Bool(),
-								fresh: Bool(),
-							}).optional(),
 						}),
 					},
 				},
@@ -48,7 +44,7 @@ export class StopDirections extends OpenAPIRoute {
 				},
 			},
 			"404": {
-				description: "Stop not found on route",
+				description: "Route or stop not found",
 				content: {
 					"application/json": {
 						schema: z.object({
@@ -77,20 +73,6 @@ export class StopDirections extends OpenAPIRoute {
 		const { agency, route, stop } = data.query;
 
 		try {
-			// First check cached data
-			const cachedDirections = await this.getCachedDirections(c.env.DB, agency, route, stop);
-			
-			if (cachedDirections.length > 0) {
-				return {
-					success: true,
-					agency,
-					route,
-					stop,
-					directions: cachedDirections,
-				};
-			}
-
-			// If not cached, fetch from AC Transit API
 			if (agency !== "actransit") {
 				return Response.json(
 					{
@@ -160,7 +142,7 @@ export class StopDirections extends OpenAPIRoute {
 				directions: directionsForStop,
 			};
 		} catch (error) {
-			console.error("Stop directions error:", error);
+			console.error("StopDirections error:", error);
 			return Response.json(
 				{
 					success: false,
@@ -168,33 +150,6 @@ export class StopDirections extends OpenAPIRoute {
 				},
 				{ status: 500 }
 			);
-		}
-	}
-
-	private async getCachedDirections(db: D1Database, agencyCode: string, routeCode: string, stopCode: string) {
-		try {
-			const result = await db.prepare(`
-				SELECT DISTINCT 
-					d.direction_code as direction,
-					d.headsign as destination
-				FROM directions d
-				JOIN stop_routes sr ON d.id = sr.direction_id
-				JOIN routes r ON d.route_id = r.id
-				JOIN stops s ON sr.stop_id = s.id
-				JOIN agencies a ON s.agency_id = a.id
-				WHERE a.code = ? AND r.route_code = ? AND s.stop_code = ?
-					AND d.active = TRUE AND sr.active = TRUE
-				ORDER BY d.direction_code
-			`).bind(agencyCode, routeCode, stopCode).all();
-
-			return (result.results || []).map(dir => ({
-				direction: dir.direction,
-				destination: dir.destination,
-				stopId: stopCode, // Include the stop ID for cached results
-			}));
-		} catch (error) {
-			console.error("Error fetching cached directions:", error);
-			return [];
 		}
 	}
 }

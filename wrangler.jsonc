@@ -49,18 +49,6 @@
 	],
 
 	/**
-	 * D1 Database
-	 * https://developers.cloudflare.com/d1/
-	 */
-	"d1_databases": [
-		{
-			"binding": "DB",
-			"database_name": "next-train-db",
-			"database_id": "5cdaa711-a65d-4870-a122-e3bcf536c127"
-		}
-	],
-
-	/**
 	 * Service Bindings (communicate between multiple Workers)
 	 * https://developers.cloudflare.com/workers/wrangler/configuration/#service-bindings
 	 */
