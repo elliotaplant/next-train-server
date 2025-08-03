@@ -930,9 +930,10 @@
                             // Mark as active - predictions available
                             favorite.active = true;
                             
-                            // Filter by direction if specified
+                            // Filter by direction if specified (only for AC Transit)
+                            // BART already filters by direction on the server
                             let predictions = data.predictions;
-                            if (favorite.direction) {
+                            if (favorite.direction && favorite.agency !== 'bart') {
                                 predictions = predictions.filter(p => 
                                     p.direction.includes(favorite.direction)
                                 );
