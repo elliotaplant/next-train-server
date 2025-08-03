@@ -6,6 +6,7 @@ import { TaskFetch } from "./endpoints/taskFetch";
 import { TaskList } from "./endpoints/taskList";
 import { SupportEmail } from "./endpoints/supportEmail";
 import { TransitPredictions } from "./endpoints/transitPredictions";
+import { Agencies } from "./endpoints/agencies";
 import { Routes } from "./endpoints/routes";
 import { Stops } from "./endpoints/stops";
 import { StopDirections } from "./endpoints/stopDirections";
@@ -29,6 +30,7 @@ openapi.post("/api/support", SupportEmail);
 
 // Transit API endpoints
 openapi.get("/api/transit/predictions", TransitPredictions);
+openapi.get("/api/transit/agencies", Agencies);
 openapi.get("/api/transit/routes", Routes);
 openapi.get("/api/transit/stops", Stops);
 openapi.get("/api/transit/stop-directions", StopDirections);
