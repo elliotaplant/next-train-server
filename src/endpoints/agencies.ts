@@ -33,6 +33,11 @@ export class Agencies extends OpenAPIRoute {
 				name: "AC Transit",
 				active: true,
 			},
+			{
+				code: "bart",
+				name: "BART",
+				active: true,
+			},
 		];
 
 		return {
