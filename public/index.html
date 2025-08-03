@@ -307,14 +307,10 @@
                     </div>
                     
                     <div class="form-group" id="bartLinesSelectGroup" style="display: none;">
-                        <label for="bartLinesSelect">Lines (select one or more)</label>
-                        <select id="bartLinesSelect" multiple style="width: 100%; padding: 10px; border: 1px solid #d1d1d6; border-radius: 8px; font-size: 16px; min-height: 120px;">
-                            <option value="red">Red Line</option>
-                            <option value="yellow">Yellow Line</option>
-                            <option value="green">Green Line</option>
-                            <option value="blue">Blue Line</option>
-                        </select>
-                        <small style="color: #8e8e93;">Hold Ctrl/Cmd to select multiple lines</small>
+                        <label>Lines (select one or more)</label>
+                        <div id="bartLinesContainer" style="display: flex; flex-wrap: wrap; gap: 15px; margin-top: 8px;">
+                            <span style="color: #8e8e93;">Select a station first...</span>
+                        </div>
                     </div>
                     
                     <div class="form-group" id="directionGroup">
@@ -466,10 +462,52 @@
             }
         }
         
+        // Load BART lines for a station
+        async function loadBartStationLines(stationCode) {
+            try {
+                const response = await fetch(`/api/transit/bart/station-lines?station=${stationCode}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    const container = document.getElementById('bartLinesContainer');
+                    
+                    if (data.lines.length === 0) {
+                        container.innerHTML = '<span style="color: #8e8e93;">No lines available for this station</span>';
+                        return;
+                    }
+                    
+                    container.innerHTML = data.lines.map(line => `
+                        <label style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" name="bartLines" value="${line.color}" style="margin-right: 8px;">
+                            <span style="display: inline-block; width: 12px; height: 12px; background-color: ${line.hexcolor}; border-radius: 2px; margin-right: 6px;"></span>
+                            ${line.name}
+                        </label>
+                    `).join('');
+                } else {
+                    throw new Error('Failed to load station lines');
+                }
+            } catch (error) {
+                console.error('Failed to load BART station lines:', error);
+                const container = document.getElementById('bartLinesContainer');
+                container.innerHTML = '<span style="color: #ff3b30;">Failed to load available lines</span>';
+            }
+        }
+        
         // Handle BART station selection
-        function onBartStationChange() {
-            // For BART, we don't need to load anything else after station selection
-            // The user just needs to select lines and direction
+        async function onBartStationChange() {
+            const stationCode = document.getElementById('bartStation').value;
+            const container = document.getElementById('bartLinesContainer');
+            
+            if (!stationCode) {
+                container.innerHTML = '<span style="color: #8e8e93;">Select a station first...</span>';
+                return;
+            }
+            
+            // Show loading state
+            container.innerHTML = '<span style="color: #8e8e93;">Loading available lines...</span>';
+            
+            // Load available lines for this station
+            await loadBartStationLines(stationCode);
         }
         
         // Populate agency dropdown
@@ -524,7 +562,6 @@
             routeSelect.required = !isBart;
             stopSelect.required = !isBart;
             document.getElementById('bartStation').required = isBart;
-            document.getElementById('bartLinesSelect').required = isBart;
             
             if (isBart) {
                 // Load BART stations
@@ -705,8 +742,8 @@
             if (isBart) {
                 // Handle BART submission
                 const bartStation = document.getElementById('bartStation');
-                const bartLinesSelect = document.getElementById('bartLinesSelect');
-                const selectedLines = Array.from(bartLinesSelect.selectedOptions).map(opt => opt.value);
+                const bartLinesCheckboxes = document.querySelectorAll('input[name="bartLines"]:checked');
+                const selectedLines = Array.from(bartLinesCheckboxes).map(cb => cb.value);
                 
                 if (!bartStation.value || selectedLines.length === 0) {
                     alert('Please select a station and at least one line.');
