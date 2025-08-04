@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NextTrain</title>
+    <link rel="icon" href="/favicon.ico">
+    <link rel="apple-touch-icon" href="/favicon.ico">
+    <meta name="theme-color" content="#007AFF">
     <style>
         * {
             margin: 0;
@@ -98,11 +101,20 @@
             font-size: 18px;
             font-weight: 600;
             margin-bottom: 4px;
+            display: flex;
+            align-items: center;
         }
         
         .favorite-info p {
             font-size: 14px;
             color: #8e8e93;
+        }
+        
+        .agency-icon {
+            width: 20px;
+            height: 20px;
+            margin-right: 8px;
+            object-fit: contain;
         }
         
         .remove-btn {
@@ -856,8 +868,11 @@
                     ${favorite.active === false ? '<div class="inactive-warning">This stop or route may no longer be in service</div>' : ''}
                     <div class="favorite-header">
                         <div class="favorite-info">
-                            <h3>${favorite.stopName}</h3>
-                            <p>${favorite.agencyName} • ${
+                            <h3>
+                                <img src="/images/${favorite.agency}.png" alt="${favorite.agencyName}" class="agency-icon">
+                                ${favorite.stopName}
+                            </h3>
+                            <p>${
                                 favorite.agency === 'bart' 
                                     ? favorite.route.split(',').map(line => line.charAt(0).toUpperCase() + line.slice(1)).join('/') + ' Line' + (favorite.route.includes(',') ? 's' : '')
                                     : favorite.route
