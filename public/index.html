@@ -345,6 +345,95 @@
         let favorites = [];
         let isRefreshing = false;
         
+        // BART line terminal destinations
+        const BART_LINE_TERMINALS = {
+            red: {
+                north: 'Richmond',
+                south: 'Millbrae/SFO'
+            },
+            yellow: {
+                north: 'Antioch',
+                south: 'SFO'
+            },
+            blue: {
+                north: 'Dublin/Pleasanton',
+                south: 'Daly City'
+            },
+            green: {
+                north: 'Berryessa',
+                south: 'Daly City'
+            },
+            orange: {
+                north: 'Richmond',
+                south: 'Berryessa'
+            }
+        };
+        
+        // Get BART direction label based on selected lines
+        function getBartDirectionLabel(direction, selectedLines) {
+            if (!selectedLines || selectedLines.length === 0) {
+                return direction === 'n' ? 'Northbound' : 'Southbound';
+            }
+            
+            // Collect unique destinations for the selected lines
+            const destinations = new Set();
+            
+            for (const line of selectedLines) {
+                const lineTerminals = BART_LINE_TERMINALS[line.toLowerCase()];
+                if (lineTerminals) {
+                    const destination = direction === 'n' ? lineTerminals.north : lineTerminals.south;
+                    if (destination) {
+                        // Handle SFO variations - normalize to just "SFO"
+                        if (destination.includes('SFO')) {
+                            destinations.add('SFO');
+                            // Also add Millbrae if it's part of the destination
+                            if (destination.includes('Millbrae')) {
+                                destinations.add('Millbrae');
+                            }
+                        } else {
+                            destinations.add(destination);
+                        }
+                    }
+                }
+            }
+            
+            // If no destinations found, return basic direction
+            if (destinations.size === 0) {
+                return direction === 'n' ? 'Northbound' : 'Southbound';
+            }
+            
+            // Format the label
+            const directionName = direction === 'n' ? 'Northbound' : 'Southbound';
+            const destArray = Array.from(destinations).sort();
+            
+            return `${directionName} - towards ${destArray.join(', ')}`;
+        }
+        
+        // Update BART direction labels based on selected lines
+        function updateBartDirectionLabels() {
+            const agencyCode = document.getElementById('agency').value;
+            if (agencyCode !== 'bart') return;
+            
+            const directionSelect = document.getElementById('direction');
+            const bartLinesCheckboxes = document.querySelectorAll('input[name="bartLines"]:checked');
+            const selectedLines = Array.from(bartLinesCheckboxes).map(cb => cb.value);
+            
+            // Get current selection to preserve it
+            const currentValue = directionSelect.value;
+            
+            // Update the options with proper labels
+            directionSelect.innerHTML = `
+                <option value="">Select direction...</option>
+                <option value="n">${getBartDirectionLabel('n', selectedLines)}</option>
+                <option value="s">${getBartDirectionLabel('s', selectedLines)}</option>
+            `;
+            
+            // Restore selection if it was set
+            if (currentValue) {
+                directionSelect.value = currentValue;
+            }
+        }
+        
         // Load favorites from localStorage
         function loadFavorites() {
             const stored = localStorage.getItem('nextTrainFavorites');
@@ -490,11 +579,14 @@
                     
                     container.innerHTML = data.lines.map(line => `
                         <label style="display: flex; align-items: center; cursor: pointer;">
-                            <input type="checkbox" name="bartLines" value="${line.color}" style="margin-right: 8px;">
+                            <input type="checkbox" name="bartLines" value="${line.color}" style="margin-right: 8px;" onchange="updateBartDirectionLabels()">
                             <span style="display: inline-block; width: 12px; height: 12px; background-color: ${line.hexcolor}; border-radius: 2px; margin-right: 6px;"></span>
                             ${line.name}
                         </label>
                     `).join('');
+                    
+                    // Update direction labels immediately
+                    updateBartDirectionLabels();
                 } else {
                     throw new Error('Failed to load station lines');
                 }
@@ -578,9 +670,10 @@
             if (isBart) {
                 // Load BART stations
                 await loadBartStations();
-                // Enable direction select for BART
+                // Enable direction select for BART - will be updated when lines are selected
                 directionSelect.innerHTML = '<option value="">Select direction...</option><option value="n">Northbound</option><option value="s">Southbound</option>';
                 directionSelect.disabled = false;
+                updateBartDirectionLabels();
             } else {
                 // Load routes for AC Transit
                 const routes = await loadRoutes(agencyCode);
@@ -878,7 +971,7 @@
                                     : favorite.route
                             } • ${
                                 favorite.agency === 'bart' && favorite.direction 
-                                    ? (favorite.direction === 'n' ? 'Northbound' : 'Southbound')
+                                    ? getBartDirectionLabel(favorite.direction, favorite.route.split(','))
                                     : favorite.direction
                             }</p>
                         </div>
